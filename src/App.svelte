@@ -1200,15 +1200,7 @@
           </div>
         </div>
       {/if}
-      <div
-        class="pointer-events-none absolute left-4 top-4 rounded-lg border border-white/10 bg-[#101821]/90 px-3 py-2"
-      >
-        <p class="text-[10px] uppercase tracking-widest text-slate-500">
-          Capa activa
-        </p>
-        <p class="mt-1 text-sm">UTCI</p>
-        <p class="mt-1 text-[10px] text-slate-400">{hourLabel}</p>
-      </div>
+
       <div
         class="pointer-events-none absolute bottom-4 left-1/2 z-10
          -translate-x-1/2 rounded-lg border border-white/10
