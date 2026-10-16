@@ -25,15 +25,27 @@
   let loadingRaster = false;
   let loadingSeries = false;
 
+  let initialMapLoading = true;
+  let initialRasterReady = false;
+
   let errorMessage = "";
   let statusMessage = "Carregant forecast.json";
 
   let playTimer;
   let isPlaying = false;
-  let rasterCache = new Map();
-  let currentRaster = null;
 
+  let rasterCache = new Map(); // TIFF llegits i descodificats
+  let rasterImageCache = new Map(); // Imatges PNG ja preparades
+  let rasterPreparationCache = new Map();
+
+  let currentRaster = null;
   let requestId = 0;
+  let preloadPromise = null;
+  let destroyed = false;
+
+  const PRELOAD_CONCURRENCY = 2;
+  const PLAYBACK_INTERVAL_MS = 900;
+
   let seriesRequestId = 0;
   let seriesPointKey = null;
   let pointSeries = [];
@@ -315,100 +327,236 @@
     }
   }
 
-  async function drawRaster(raster) {
-    if (!map) return;
+  async function preloadAllRasters() {
+    if (preloadPromise || !forecast.length) return preloadPromise;
 
-    if (!map.isStyleLoaded()) {
-      await new Promise((resolve) => {
-        map.once("idle", resolve);
-      });
-    }
+    preloadPromise = (async () => {
+      let nextIndex = 0;
+      let completed = 0;
+      let failed = 0;
 
-    if (!map || !map.isStyleLoaded()) return;
+      async function worker() {
+        while (!destroyed) {
+          const index = nextIndex++;
 
-    const canvas = document.createElement("canvas");
-    canvas.width = raster.width;
-    canvas.height = raster.height;
+          if (index >= forecast.length) return;
 
-    const ctx = canvas.getContext("2d");
-    const pixels = ctx.createImageData(canvas.width, canvas.height);
+          try {
+            await prepareRaster(forecast[index]);
+          } catch (error) {
+            failed++;
+            console.warn(
+              `No s'ha pogut precarregar el ràster ${index + 1}:`,
+              error,
+            );
+          }
 
-    for (let i = 0; i < raster.values.length; i++) {
-      const v = Number(raster.values[i]);
-      const p = i * 4;
+          completed++;
 
-      if (
-        !Number.isFinite(v) ||
-        (raster.nodata !== null && v === raster.nodata)
-      ) {
-        pixels.data[p + 3] = 0;
-        continue;
+          // No substituïm l'estat del fotograma que es veu al mapa.
+          if (!destroyed) {
+            console.info(`Precarrega UTCI: ${completed}/${forecast.length}`);
+          }
+        }
       }
 
-      const [r, g, b] = hexRgb(getClass(v).c);
-      pixels.data[p] = r;
-      pixels.data[p + 1] = g;
-      pixels.data[p + 2] = b;
-      pixels.data[p + 3] = 210;
-    }
+      await Promise.all(
+        Array.from(
+          {
+            length: Math.min(PRELOAD_CONCURRENCY, forecast.length),
+          },
+          () => worker(),
+        ),
+      );
 
-    ctx.putImageData(pixels, 0, 0);
+      if (!destroyed) {
+        console.info(
+          `Precarrega finalitzada: ${completed - failed} correctes, ${failed} errors.`,
+        );
+      }
+    })();
 
+    return preloadPromise;
+  }
+
+  function rasterCoordinates(raster) {
     const [west, south, east, north] = raster.bbox;
     const toLngLat = (x, y) => proj4("EPSG:25831", "EPSG:4326", [x, y]);
 
-    const coordinates = [
+    return [
       toLngLat(west, north),
       toLngLat(east, north),
       toLngLat(east, south),
       toLngLat(west, south),
     ];
+  }
 
-    if (map.getLayer("utci-raster-layer")) {
-      map.removeLayer("utci-raster-layer");
+  async function prepareRaster(item) {
+    const url = rasterUrl(item);
+
+    // Si ja tenim la imatge preparada, la reutilitzem.
+    if (rasterImageCache.has(url)) {
+      return rasterImageCache.get(url);
     }
 
-    if (map.getSource("utci-raster-source")) {
-      map.removeSource("utci-raster-source");
+    // Si ja s'està preparant, compartim la mateixa operació.
+    if (rasterPreparationCache.has(url)) {
+      return rasterPreparationCache.get(url);
     }
 
-    map.addSource("utci-raster-source", {
-      type: "image",
-      url: canvas.toDataURL("image/png"),
-      coordinates,
-    });
+    const promise = (async () => {
+      const raster = await loadRaster(item);
 
-    map.addLayer({
-      id: "utci-raster-layer",
-      type: "raster",
-      source: "utci-raster-source",
-      paint: {
-        "raster-opacity": 0.88,
-        "raster-resampling": "nearest",
-      },
-    });
-    ordenarCapes();
-    currentRaster = raster;
+      const canvas = document.createElement("canvas");
+      canvas.width = raster.width;
+      canvas.height = raster.height;
+
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        throw new Error("No s'ha pogut crear el canvas del ràster.");
+      }
+
+      const pixels = ctx.createImageData(canvas.width, canvas.height);
+
+      for (let i = 0; i < raster.values.length; i++) {
+        const v = Number(raster.values[i]);
+        const p = i * 4;
+
+        if (
+          !Number.isFinite(v) ||
+          (raster.nodata !== null && v === raster.nodata)
+        ) {
+          pixels.data[p + 3] = 0;
+          continue;
+        }
+
+        const [r, g, b] = hexRgb(getClass(v).c);
+
+        pixels.data[p] = r;
+        pixels.data[p + 1] = g;
+        pixels.data[p + 2] = b;
+        pixels.data[p + 3] = 210;
+      }
+
+      ctx.putImageData(pixels, 0, 0);
+
+      // PNG en format Blob: evita la cadena Base64 de toDataURL().
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error("No s'ha pogut generar el PNG."));
+        }, "image/png");
+      });
+
+      if (destroyed) {
+        throw new Error("La preparació s'ha cancel·lat.");
+      }
+
+      const imageUrl = URL.createObjectURL(blob);
+
+      const prepared = {
+        url,
+        imageUrl,
+        coordinates: rasterCoordinates(raster),
+        raster,
+      };
+
+      rasterImageCache.set(url, prepared);
+
+      return prepared;
+    })();
+
+    rasterPreparationCache.set(url, promise);
+
+    try {
+      return await promise;
+    } finally {
+      rasterPreparationCache.delete(url);
+    }
+  }
+
+  function ensureRasterLayer(prepared) {
+    if (!map || destroyed) return;
+
+    const source = map.getSource("utci-raster-source");
+
+    if (source) {
+      source.updateImage({
+        url: prepared.imageUrl,
+        coordinates: prepared.coordinates,
+      });
+    } else {
+      map.addSource("utci-raster-source", {
+        type: "image",
+        url: prepared.imageUrl,
+        coordinates: prepared.coordinates,
+      });
+
+      map.addLayer({
+        id: "utci-raster-layer",
+        type: "raster",
+        source: "utci-raster-source",
+        paint: {
+          "raster-opacity": 0.88,
+          "raster-resampling": "nearest",
+        },
+      });
+
+      ordenarCapes();
+    }
+
+    currentRaster = prepared.raster;
     statusMessage = "Ràster carregat";
+    initialRasterReady = true;
+  }
+
+  function waitForInitialRasterRender() {
+    if (!map || destroyed || !initialRasterReady) return;
+
+    const checkRender = () => {
+      if (destroyed || !map) return;
+
+      if (
+        map.getLayer("utci-raster-layer") &&
+        map.getSource("utci-raster-source") &&
+        map.isSourceLoaded("utci-raster-source")
+      ) {
+        initialMapLoading = false;
+        map.off("render", checkRender);
+      }
+    };
+
+    map.on("render", checkRender);
+    checkRender();
   }
 
   async function showForecast() {
-    if (!map || !activeForecast) return;
+    if (!map || !activeForecast || destroyed) return;
 
     const id = ++requestId;
+
     loadingRaster = true;
     errorMessage = "";
-    statusMessage = "Carregant TIFF…";
 
     try {
-      const raster = await loadRaster(activeForecast);
+      const prepared = await prepareRaster(activeForecast);
 
-      if (id !== requestId) return;
+      // Si l'usuari ja ha triat un altre fotograma, no mostrem aquest.
+      if (id !== requestId || destroyed) return;
 
-      await drawRaster(raster);
-    } catch (e) {
-      console.error(e);
-      errorMessage = e?.message || "Error carregant el ràster.";
+      ensureRasterLayer(prepared);
+
+      if (!initialMapLoading) {
+        // El mapa ja havia completat la càrrega inicial.
+      } else {
+        waitForInitialRasterRender();
+      }
+    } catch (error) {
+      if (id !== requestId || destroyed) return;
+
+      console.error("Error preparant el ràster:", error);
+      errorMessage = error?.message || "Error carregant el ràster.";
       statusMessage = "Error de càrrega";
     } finally {
       if (id === requestId) loadingRaster = false;
@@ -670,21 +818,60 @@
 
   function stopPlayback() {
     isPlaying = false;
-    clearInterval(playTimer);
-    playTimer = undefined;
+
+    if (playTimer !== undefined) {
+      clearTimeout(playTimer);
+      playTimer = undefined;
+    }
+  }
+
+  async function playbackStep() {
+    if (!isPlaying || destroyed) return;
+
+    if (Number(selectedHour) >= totalHours) {
+      stopPlayback();
+      return;
+    }
+
+    const nextIndex = Number(selectedHour) + 1;
+    const nextItem = forecast[nextIndex];
+
+    try {
+      // No avancem fins que la imatge següent estigui preparada.
+      await prepareRaster(nextItem);
+
+      if (!isPlaying || destroyed) return;
+
+      selectedHour = nextIndex;
+
+      playTimer = setTimeout(playbackStep, PLAYBACK_INTERVAL_MS);
+    } catch (error) {
+      console.warn("Fotograma no disponible:", error);
+
+      // No deixem el mapa en blanc. Intentem continuar amb el següent.
+      if (nextIndex < totalHours) {
+        selectedHour = nextIndex;
+        playTimer = setTimeout(playbackStep, PLAYBACK_INTERVAL_MS);
+      } else {
+        stopPlayback();
+      }
+    }
   }
 
   function togglePlayback() {
-    if (isPlaying) return stopPlayback();
+    if (isPlaying) {
+      stopPlayback();
+      return;
+    }
+
     if (forecast.length < 2) return;
 
-    if (selectedHour >= totalHours) selectedHour = 0;
+    if (Number(selectedHour) >= totalHours) {
+      selectedHour = 0;
+    }
 
     isPlaying = true;
-    playTimer = setInterval(() => {
-      if (selectedHour >= totalHours) stopPlayback();
-      else selectedHour += 1;
-    }, 900);
+    playbackStep();
   }
 
   onMount(() => {
@@ -700,6 +887,13 @@
     });
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
+    const attribution = new maplibregl.AttributionControl({
+      compact: true,
+    });
+
+    map.addControl(attribution, "bottom-right");
+    attribution._container.classList.add("maplibregl-compact");
+    attribution._container.classList.remove("maplibregl-compact-show");
 
     map.on("load", async () => {
       afegirHillshade();
@@ -757,7 +951,7 @@
         }
 
         loadingForecast = false;
-        //await showForecast();
+        preloadAllRasters();
       } catch (e) {
         console.error(e);
         loadingForecast = false;
@@ -799,9 +993,23 @@
     resizeObserver.observe(mapContainer);
 
     return () => {
+      destroyed = true;
       stopPlayback();
+
+      requestId += 1;
       seriesRequestId += 1;
+      municipalityRequestId += 1;
+
       resizeObserver?.disconnect();
+
+      for (const prepared of rasterImageCache.values()) {
+        URL.revokeObjectURL(prepared.imageUrl);
+      }
+
+      rasterImageCache.clear();
+      rasterCache.clear();
+      rasterPreparationCache.clear();
+
       map?.remove();
     };
   });
@@ -841,67 +1049,11 @@
   </header>
 
   <main
-    class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[310px_minmax(0,1fr)_360px] lg:grid-rows-1 lg:overflow-hidden"
+    class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[310px_minmax(0,1fr)_400px] lg:grid-rows-1 lg:overflow-hidden"
   >
     <aside
       class="flex flex-col gap-4 border-b border-white/10 bg-[#101821] p-4 lg:overflow-y-auto lg:border-b-0 lg:border-r"
     >
-      <div class="h-px bg-white/10"></div>
-
-      <section>
-        <h2
-          class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
-        >
-          {displayMode === "utci"
-            ? "Llegenda UTCI (°C)"
-            : "Categories d’estrès"}
-        </h2>
-
-        {#if displayMode === "utci"}
-          <div class="mb-2 flex h-2 overflow-hidden rounded-full">
-            {#each classes as item}
-              <div class="flex-1" style={`background:${item.c}`}></div>
-            {/each}
-          </div>
-
-          <div class="space-y-1.5">
-            {#each classes as item}
-              <div class="flex items-center gap-2">
-                <span
-                  class="h-2.5 w-2.5 shrink-0 rounded-sm"
-                  style={`background:${item.c}`}
-                ></span>
-                <span class="min-w-0 flex-1 text-[11px] text-slate-300"
-                  >{item.label}</span
-                >
-                <span class="shrink-0 text-[10px] text-slate-500"
-                  >{item.range}</span
-                >
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="space-y-2">
-            {#each classes as item}
-              <div class="flex items-center gap-2">
-                <span
-                  class="h-3 w-3 shrink-0 rounded-sm"
-                  style={`background:${item.c}`}
-                ></span>
-                <span class="text-[11px] text-slate-300">{item.label}</span>
-              </div>
-            {/each}
-          </div>
-
-          <p class="mt-2 text-[10px] text-slate-600">
-            Classificació derivada del valor UTCI; la capa d’origen és la
-            mateixa.
-          </p>
-        {/if}
-      </section>
-
-      <div class="h-px bg-white/10"></div>
-
       <section>
         <div class="mb-2 flex items-center justify-between">
           <h2
@@ -967,6 +1119,59 @@
           </p>
         {/if}
       </section>
+
+      <div class="h-px bg-white/10"></div>
+      <section>
+        <h2
+          class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
+        >
+          {displayMode === "utci"
+            ? "Llegenda UTCI (°C)"
+            : "Categories d’estrès"}
+        </h2>
+
+        {#if displayMode === "utci"}
+          <div class="mb-2 flex h-2 overflow-hidden rounded-full">
+            {#each classes as item}
+              <div class="flex-1" style={`background:${item.c}`}></div>
+            {/each}
+          </div>
+
+          <div class="space-y-1.5">
+            {#each classes as item}
+              <div class="flex items-center gap-2">
+                <span
+                  class="h-2.5 w-2.5 shrink-0 rounded-sm"
+                  style={`background:${item.c}`}
+                ></span>
+                <span class="min-w-0 flex-1 text-sm text-slate-200">
+                  {item.label}
+                </span>
+                <span class="shrink-0 text-[10px] text-slate-500"
+                  >{item.range}</span
+                >
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="space-y-2">
+            {#each classes as item}
+              <div class="flex items-center gap-2">
+                <span
+                  class="h-3 w-3 shrink-0 rounded-sm"
+                  style={`background:${item.c}`}
+                ></span>
+                <span class="text-[11px] text-slate-300">{item.label}</span>
+              </div>
+            {/each}
+          </div>
+
+          <p class="mt-2 text-[10px] text-slate-600">
+            Classificació derivada del valor UTCI; la capa d’origen és la
+            mateixa.
+          </p>
+        {/if}
+      </section>
     </aside>
 
     <section
@@ -976,7 +1181,25 @@
         bind:this={mapContainer}
         class="absolute inset-0 h-full w-full bg-[#18232c]"
       ></div>
+      {#if initialMapLoading}
+        <div
+          class="absolute inset-0 z-30 flex flex-col items-center justify-center
+           gap-4 bg-[#18232c] text-slate-300"
+          role="status"
+          aria-live="polite"
+        >
+          <div class="utci-spinner" aria-hidden="true"></div>
 
+          <div class="text-center">
+            <p class="text-sm font-medium text-teal-200">
+              Carregant malla UTCI
+            </p>
+            <p class="mt-1 text-xs text-slate-400">
+              Preparant les dades i renderitzant el mapa…
+            </p>
+          </div>
+        </div>
+      {/if}
       <div
         class="pointer-events-none absolute left-4 top-4 rounded-lg border border-white/10 bg-[#101821]/90 px-3 py-2"
       >
@@ -986,22 +1209,15 @@
         <p class="mt-1 text-sm">UTCI</p>
         <p class="mt-1 text-[10px] text-slate-400">{hourLabel}</p>
       </div>
-
-      {#if !selectedPoint}
-        <div
-          class="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-[#101821]/90 px-4 py-2 text-xs text-slate-300"
-        >
-          Fes clic al mapa per consultar un punt
-        </div>
-      {/if}
-
-      {#if loadingRaster}
-        <div
-          class="pointer-events-none absolute bottom-4 right-4 rounded-lg bg-[#101821]/90 px-3 py-2 text-xs"
-        >
-          Carregant TIFF…
-        </div>
-      {/if}
+      <div
+        class="pointer-events-none absolute bottom-4 left-1/2 z-10
+         -translate-x-1/2 rounded-lg border border-white/10
+         bg-[#101821]/95 px-4 py-2 text-center shadow-lg"
+      >
+        <p class="mt-0.5 whitespace-nowrap text-sm font-semibold text-teal-200">
+          {hourLabel}
+        </p>
+      </div>
     </section>
 
     <aside
@@ -1071,7 +1287,7 @@
         {/if}
       </section>
 
-      <div class="h-px bg-white/10"></div>
+      <!--  <div class="h-px bg-white/10"></div> -->
       {#if Number(selectedHour) === 0}
         <section>
           <div class="mb-2 flex items-center justify-between">
@@ -1167,21 +1383,6 @@
                 {/each}
               </svg>
 
-              {#if chartSeries[0]?.value != null}
-                <div class="mt-2 border-t border-white/10 pt-2">
-                  <p class="text-[10px] text-slate-500">Hora seleccionada</p>
-                  <p
-                    class="mt-1 text-sm font-semibold"
-                    style={`color: ${chartSeries[0].color}`}
-                  >
-                    {chartSeries[0].value.toFixed(1)} °C
-                  </p>
-                  <p class="text-[10px] text-slate-500">
-                    {chartSeries[0].label}
-                  </p>
-                </div>
-              {/if}
-
               <p class="mt-2 text-[10px] text-slate-500">
                 Cada punt representa un instant de previsió separat per 3 hores.
               </p>
@@ -1198,24 +1399,6 @@
         </section>
 
         <div class="h-px bg-white/10"></div>
-
-        <section>
-          <h2
-            class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
-          >
-            Previsió carregada
-          </h2>
-
-          <div class="rounded-lg border border-white/5 bg-white/[0.02] p-3">
-            <p class="text-xs text-slate-400">Hora vàlida</p>
-            <p class="mt-1 text-sm">{hourLabel}</p>
-            <p class="mt-2 text-[10px] text-slate-500">
-              {forecast.length
-                ? `${forecast.length} entrades al manifest`
-                : "Sense previsió"}
-            </p>
-          </div>
-        </section>
       {/if}
       <div class="h-px bg-white/10"></div>
 
@@ -1345,6 +1528,28 @@
 
   :global(*) {
     box-sizing: border-box;
+  }
+
+  .utci-spinner {
+    width: 42px;
+    height: 42px;
+    border: 3px solid rgb(255 255 255 / 14%);
+    border-top-color: #67d9c1;
+    border-right-color: #67d9c1;
+    border-radius: 50%;
+    animation: utci-spin 0.8s linear infinite;
+  }
+
+  @keyframes utci-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .utci-spinner {
+      animation-duration: 2s;
+    }
   }
 
   .time-slider {
