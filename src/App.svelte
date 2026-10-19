@@ -10,6 +10,11 @@
     "+proj=utm +zone=31 +ellps=GRS80 +units=m +no_defs +type=crs",
   );
 
+  proj4.defs(
+    "EPSG:3857",
+    "+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs +type=crs",
+  );
+
   let mapContainer, map, resizeObserver;
   let language = "ca";
   // In legacy Svelte reactivity, make the translator itself reactive.
@@ -308,6 +313,21 @@
       const buffer = await response.arrayBuffer();
       const tiff = await fromArrayBuffer(buffer);
       const image = await tiff.getImage();
+      const fileDirectory = image.getFileDirectory();
+      const geoKeys = image.getGeoKeys();
+      const epsg = Number(geoKeys?.ProjectedCSTypeGeoKey);
+      console.log("TIFF georeferenciació:", {
+        width: image.getWidth(),
+        height: image.getHeight(),
+        bbox: image.getBoundingBox(),
+        origin: image.getOrigin(),
+        resolution: image.getResolution(),
+        geoKeys: image.getGeoKeys(),
+        nodata: fileDirectory?.GDAL_NODATA,
+        modelPixelScale: fileDirectory?.ModelPixelScale,
+        modelTiepoint: fileDirectory?.ModelTiepoint,
+        modelTransformation: fileDirectory?.ModelTransformation,
+      });
       const bands = await image.readRasters({ interleave: false });
       const values = bands[0];
       const bbox = image.getBoundingBox();
@@ -330,6 +350,7 @@
         width: image.getWidth(),
         height: image.getHeight(),
         bbox,
+        epsg,
         nodata: tag == null ? null : Number(String(tag).replace(/\0/g, "")),
       };
     })();
@@ -432,7 +453,9 @@
 
   function rasterCoordinates(raster) {
     const [west, south, east, north] = raster.bbox;
-    const toLngLat = (x, y) => proj4("EPSG:25831", "EPSG:4326", [x, y]);
+    const sourceCrs = raster.epsg === 3857 ? "EPSG:3857" : "EPSG:25831";
+
+    const toLngLat = (x, y) => proj4(sourceCrs, "EPSG:4326", [x, y]);
 
     return [
       toLngLat(west, north),
@@ -617,7 +640,8 @@
   function sampleAt(lng, lat, raster = currentRaster) {
     if (!raster) return null;
 
-    const [xMap, yMap] = proj4("EPSG:4326", "EPSG:25831", [lng, lat]);
+    const sourceCrs = raster.epsg === 3857 ? "EPSG:3857" : "EPSG:25831";
+    const [xMap, yMap] = proj4("EPSG:4326", sourceCrs, [lng, lat]);
     const [west, south, east, north] = raster.bbox;
 
     if (xMap < west || xMap > east || yMap < south || yMap > north) {
