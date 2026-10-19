@@ -3,6 +3,7 @@
   import * as maplibregl from "maplibre-gl";
   import { fromArrayBuffer } from "geotiff";
   import proj4 from "proj4";
+  import { translations } from "./dictionary.js";
 
   proj4.defs(
     "EPSG:25831",
@@ -10,6 +11,36 @@
   );
 
   let mapContainer, map, resizeObserver;
+  let language = "ca";
+  // In legacy Svelte reactivity, make the translator itself reactive.
+  // This invalidates every {tr("...")} expression when language changes.
+  $: tr = (key) => translations[language]?.[key] ?? translations.ca[key] ?? key;
+  const classLabels = {
+    "Fred extrem": "extremeCold",
+    "Fred molt fort": "veryStrongCold",
+    "Fred fort": "strongCold",
+    "Fred moderat": "moderateCold",
+    "Fred lleu": "slightCold",
+    "Sense estrès tèrmic": "noHeatStress",
+    "Calor moderada": "moderateHeat",
+    "Calor forta": "strongHeat",
+    "Calor molt forta": "veryStrongHeat",
+    "Calor extrema": "extremeHeat",
+  };
+  $: classLabel = (item) => tr(classLabels[item.label] ?? item.label);
+  const rangeKeys = {
+    "< −40 °C": "rangeBelow40",
+    "−40 a −27 °C": "range40to27",
+    "−27 a −13 °C": "range27to13",
+    "−13 a 0 °C": "range13to0",
+    "0 a 9 °C": "range0to9",
+    "9 a 26 °C": "range9to26",
+    "26 a 32 °C": "range26to32",
+    "32 a 38 °C": "range32to38",
+    "38 a 46 °C": "range38to46",
+    "> 46 °C": "rangeAbove46",
+  };
+  $: classRange = (item) => tr(rangeKeys[item.range] ?? item.range);
   let displayMode = "utci";
   let selectedHour = 0;
   let selectedPoint = null;
@@ -121,24 +152,44 @@
     },
   ];
 
+  $: if (language) {
+    if (statusMessage === "Carregant forecast.json")
+      statusMessage = tr("loadingManifest");
+    else if (
+      statusMessage === "Ràster carregat" ||
+      statusMessage === "Raster loaded"
+    )
+      statusMessage = tr("rasterLoaded");
+    else if (
+      statusMessage === "Error de càrrega" ||
+      statusMessage === "Loading error"
+    )
+      statusMessage = tr("loadError");
+    else if (
+      statusMessage === "Previsió no disponible" ||
+      statusMessage === "Forecast unavailable"
+    )
+      statusMessage = tr("forecastUnavailable");
+  }
   $: totalHours = Math.max(0, forecast.length - 1);
   $: activeForecast = forecast[Number(selectedHour)] ?? null;
   $: hourLabel = formatDate(
     activeForecast?.valid_time ?? activeForecast?.validTime,
   );
 
-  $: selectedValue =
-    selectedPoint && currentRaster
+  $: selectedValue = (() => {
+    language;
+    return selectedPoint && currentRaster
       ? sampleAt(selectedPoint.lng, selectedPoint.lat, currentRaster)
       : null;
+  })();
 
   // Finestra temporal de 24 hores a partir de l'hora seleccionada.
   $: chartSeries = pointSeries;
   $: chartRange = getChartRange(chartSeries);
-
-  $: chartRange = getChartRange(chartSeries);
   $: if (selectedPoint && forecast.length && !loadingForecast) {
     selectedHour;
+    language;
     updatePointSeries(selectedPoint);
   } else if (!selectedPoint) {
     seriesRequestId += 1;
@@ -153,7 +204,7 @@
 
     return Number.isNaN(d.getTime())
       ? String(value)
-      : new Intl.DateTimeFormat("ca-ES", {
+      : new Intl.DateTimeFormat(language === "ca" ? "ca-ES" : "en-GB", {
           weekday: "short",
           day: "2-digit",
           month: "2-digit",
@@ -169,7 +220,7 @@
 
     return Number.isNaN(d.getTime())
       ? String(value)
-      : new Intl.DateTimeFormat("ca-ES", {
+      : new Intl.DateTimeFormat(language === "ca" ? "ca-ES" : "en-GB", {
           day: "2-digit",
           month: "2-digit",
           hour: "2-digit",
@@ -507,7 +558,7 @@
     }
 
     currentRaster = prepared.raster;
-    statusMessage = "Ràster carregat";
+    statusMessage = tr("rasterLoaded");
     initialRasterReady = true;
   }
 
@@ -556,8 +607,8 @@
       if (id !== requestId || destroyed) return;
 
       console.error("Error preparant el ràster:", error);
-      errorMessage = error?.message || "Error carregant el ràster.";
-      statusMessage = "Error de càrrega";
+      errorMessage = "rasterError";
+      statusMessage = tr("loadError");
     } finally {
       if (id === requestId) loadingRaster = false;
     }
@@ -602,7 +653,7 @@
 
     return {
       value,
-      label: category.label,
+      label: classLabel(category),
       color: category.c,
       range: category.range,
     };
@@ -667,14 +718,13 @@
       }
 
       if (!selectedMunicipality) {
-        municipalityError =
-          "No s'ha pogut identificar el municipi d'aquest punt.";
+        municipalityError = "municipalityNotFound";
       }
     } catch (error) {
       console.error("Error consultant el municipi:", error);
 
       if (id === municipalityRequestId) {
-        municipalityError = "No s'ha pogut consultar el municipi.";
+        municipalityError = "municipalityError";
       }
     } finally {
       if (id === municipalityRequestId) {
@@ -695,7 +745,7 @@
       return;
     }
 
-    const key = `${pointKey(point)}:${selectedHour}`;
+    const key = `${pointKey(point)}:${selectedHour}:${language}`;
 
     if (key === seriesPointKey) return;
 
@@ -955,8 +1005,8 @@
       } catch (e) {
         console.error(e);
         loadingForecast = false;
-        errorMessage = e?.message || "Error llegint la previsió.";
-        statusMessage = "Previsió no disponible";
+        errorMessage = "forecastError";
+        statusMessage = tr("forecastUnavailable");
       }
     });
 
@@ -1018,10 +1068,16 @@
 </script>
 
 <svelte:head>
-  <title>UTCI Catalunya | Visor de confort tèrmic</title>
+  <title
+    >{language === "ca"
+      ? "UTCI Catalunya | Visor de confort tèrmic"
+      : "UTCI Catalonia | Thermal comfort viewer"}</title
+  >
   <meta
     name="description"
-    content="Visor de previsió d'estrès tèrmic a Catalunya."
+    content={language === "ca"
+      ? "Visor de previsió d'estrès tèrmic a Catalunya."
+      : "Thermal stress forecast viewer for Catalonia."}
   />
 </svelte:head>
 
@@ -1033,14 +1089,35 @@
   >
     <div>
       <h1 class="text-base font-semibold">
-        UTCI <span class="font-normal text-slate-400">/ Catalunya</span>
+        UTCI <span class="font-normal text-slate-400"
+          >/ {language === "ca" ? "Catalunya" : "Catalonia"}</span
+        >
       </h1>
       <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-        Thermal stress observatory
+        {tr("observatory")}
       </p>
     </div>
 
-    <div class="flex items-center gap-2 text-xs text-slate-400">
+    <div class="flex items-center gap-3 text-xs text-slate-400">
+      <div
+        class="flex items-center rounded-lg border border-white/10 bg-[#0b1118] p-0.5"
+        aria-label={language === "ca"
+          ? "Selector d’idioma"
+          : "Language selector"}
+      >
+        <button
+          type="button"
+          class={`rounded-md px-2 py-1 ${language === "ca" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+          aria-pressed={language === "ca"}
+          onclick={() => (language = "ca")}>CA</button
+        >
+        <button
+          type="button"
+          class={`rounded-md px-2 py-1 ${language === "en" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+          aria-pressed={language === "en"}
+          onclick={() => (language = "en")}>EN</button
+        >
+      </div>
       <span
         class={`h-2 w-2 rounded-full ${errorMessage ? "bg-red-400" : loadingForecast || loadingRaster ? "bg-amber-400" : "bg-emerald-400"}`}
       ></span>
@@ -1059,7 +1136,7 @@
           <h2
             class="text-[11px] font-semibold uppercase tracking-widest text-slate-400"
           >
-            Temps de previsió
+            {tr("forecastTime")}
           </h2>
           <span class="text-[10px] text-slate-500">
             {forecast.length
@@ -1070,7 +1147,7 @@
 
         <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
           <div class="mb-2 flex justify-between gap-2">
-            <span class="text-[11px] text-slate-500">Hora local</span>
+            <span class="text-[11px] text-slate-500">{tr("localTime")}</span>
             <span class="text-right text-sm font-semibold text-teal-200"
               >{hourLabel}</span
             >
@@ -1083,7 +1160,7 @@
             step="1"
             bind:value={selectedHour}
             disabled={!forecast.length}
-            aria-label="Hora de previsió"
+            aria-label={tr("forecastHour")}
             class="time-slider w-full"
           />
 
@@ -1092,21 +1169,21 @@
               class="h-8 w-8 rounded-lg border border-white/10 disabled:opacity-40"
               onclick={() => changeHour(-1)}
               disabled={!forecast.length || Number(selectedHour) === 0}
-              aria-label="Hora anterior">‹</button
+              aria-label={tr("previousHour")}>‹</button
             >
 
             <button
               class="h-8 flex-1 rounded-lg border border-teal-300/20 bg-teal-300/10 text-xs text-teal-200 disabled:opacity-40"
               onclick={togglePlayback}
               disabled={forecast.length < 2}
-              >{isPlaying ? "Pausa" : "▶ Reproduir"}</button
+              >{isPlaying ? tr("pause") : tr("play")}</button
             >
 
             <button
               class="h-8 w-8 rounded-lg border border-white/10 disabled:opacity-40"
               onclick={() => changeHour(1)}
               disabled={!forecast.length || Number(selectedHour) >= totalHours}
-              aria-label="Hora següent">›</button
+              aria-label={tr("nextHour")}>›</button
             >
           </div>
         </div>
@@ -1115,7 +1192,7 @@
           <p
             class="mt-2 break-words rounded-lg border border-red-400/20 bg-red-400/5 p-2 text-[11px] text-red-200"
           >
-            {errorMessage}
+            {tr(errorMessage)}
           </p>
         {/if}
       </section>
@@ -1125,9 +1202,7 @@
         <h2
           class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
         >
-          {displayMode === "utci"
-            ? "Llegenda UTCI (°C)"
-            : "Categories d’estrès"}
+          {displayMode === "utci" ? tr("utciLegend") : tr("stressCategories")}
         </h2>
 
         {#if displayMode === "utci"}
@@ -1145,10 +1220,10 @@
                   style={`background:${item.c}`}
                 ></span>
                 <span class="min-w-0 flex-1 text-sm text-slate-200">
-                  {item.label}
+                  {classLabel(item)}
                 </span>
                 <span class="shrink-0 text-[10px] text-slate-500"
-                  >{item.range}</span
+                  >{classRange(item)}</span
                 >
               </div>
             {/each}
@@ -1161,14 +1236,15 @@
                   class="h-3 w-3 shrink-0 rounded-sm"
                   style={`background:${item.c}`}
                 ></span>
-                <span class="text-[11px] text-slate-300">{item.label}</span>
+                <span class="text-[11px] text-slate-300"
+                  >{classLabel(item)}</span
+                >
               </div>
             {/each}
           </div>
 
           <p class="mt-2 text-[10px] text-slate-600">
-            Classificació derivada del valor UTCI; la capa d’origen és la
-            mateixa.
+            {tr("classificationNote")}
           </p>
         {/if}
       </section>
@@ -1192,10 +1268,10 @@
 
           <div class="text-center">
             <p class="text-sm font-medium text-teal-200">
-              Carregant malla UTCI
+              {tr("loadingGrid")}
             </p>
             <p class="mt-1 text-xs text-slate-400">
-              Preparant les dades i renderitzant el mapa…
+              {tr("preparingMap")}
             </p>
           </div>
         </div>
@@ -1219,18 +1295,20 @@
         {#if selectedPoint}
           <div class="mb-2 rounded-xl border border-white/10 bg-[#0b1118] p-3">
             <p class="text-[10px] uppercase tracking-widest text-slate-500">
-              Municipi
+              {tr("municipality")}
             </p>
 
             {#if loadingMunicipality}
-              <p class="mt-1 text-sm text-slate-400">Consultant municipi…</p>
+              <p class="mt-1 text-sm text-slate-400">
+                {tr("queryingMunicipality")}
+              </p>
             {:else if selectedMunicipality}
               <p class="mt-1 text-sm font-semibold text-teal-200">
                 {selectedMunicipality}
               </p>
             {:else if municipalityError}
               <p class="mt-1 text-xs text-amber-300">
-                {municipalityError}
+                {tr(municipalityError)}
               </p>
             {:else}
               <p class="mt-1 text-sm text-slate-400">—</p>
@@ -1239,13 +1317,13 @@
           <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <p class="text-[10px] text-slate-500">Latitud</p>
+                <p class="text-[10px] text-slate-500">{tr("latitude")}</p>
                 <p class="mt-1 font-mono text-xs">
                   {selectedPoint.lat.toFixed(5)}°
                 </p>
               </div>
               <div>
-                <p class="text-[10px] text-slate-500">Longitud</p>
+                <p class="text-[10px] text-slate-500">{tr("longitude")}</p>
                 <p class="mt-1 font-mono text-xs">
                   {selectedPoint.lng.toFixed(5)}°
                 </p>
@@ -1255,7 +1333,7 @@
 
           <div class="mt-2 rounded-xl border border-white/10 bg-[#0b1118] p-3">
             <p class="text-[10px] uppercase tracking-widest text-slate-500">
-              Valor UTCI
+              {tr("utciValue")}
             </p>
             <p
               class="mt-1 text-2xl font-semibold"
@@ -1264,16 +1342,16 @@
               {selectedValue ? `${selectedValue.value.toFixed(1)} °C` : "—"}
             </p>
             <p class="mt-1 text-xs text-slate-400">
-              {selectedValue?.label ?? "Sense valor al ràster en aquest punt"}
+              {selectedValue?.label ?? tr("noRasterValue")}
             </p>
           </div>
         {:else}
           <div
             class="rounded-xl border border-dashed border-white/10 p-5 text-center"
           >
-            <p class="text-sm text-slate-300">Cap punt seleccionat</p>
+            <p class="text-sm text-slate-300">{tr("noPoint")}</p>
             <p class="mt-1 text-xs text-slate-500">
-              Fes clic al mapa per consultar el valor UTCI.
+              {tr("clickMap")}
             </p>
           </div>
         {/if}
@@ -1286,10 +1364,11 @@
             <h2
               class="text-[11px] font-semibold uppercase tracking-widest text-slate-400"
             >
-              Evolució UTCI · 24 h
+              {tr("utciEvolution")}
             </h2>
             {#if loadingSeries}
-              <span class="text-[10px] text-amber-300">Calculant…</span>
+              <span class="text-[10px] text-amber-300">{tr("calculating")}</span
+              >
             {/if}
           </div>
 
@@ -1298,20 +1377,20 @@
               class="rounded-xl border border-dashed border-white/10 p-4 text-center"
             >
               <p class="text-xs text-slate-400">
-                Selecciona un punt al mapa per veure'n l'evolució temporal.
+                {tr("selectPoint")}
               </p>
             </div>
           {:else if chartSeries.length}
             <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
               <p class="mb-2 text-[10px] text-slate-500">
-                UTCI (°C) · Hora local
+                {tr("localHour")}
               </p>
 
               <svg
                 viewBox="0 0 300 148"
                 class="w-full"
                 role="img"
-                aria-label="Evolució de l'UTCI durant les pròximes 24 hores"
+                aria-label={tr("next24Hours")}
               >
                 {#each chartRange.ticks as tick}
                   <line
@@ -1376,15 +1455,13 @@
               </svg>
 
               <p class="mt-2 text-[10px] text-slate-500">
-                Cada punt representa un instant de previsió separat per 3 hores.
+                {tr("eachPoint")}
               </p>
             </div>
           {:else}
             <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
               <p class="text-xs text-slate-400">
-                {loadingSeries
-                  ? "Preparant la sèrie temporal…"
-                  : "No hi ha dades disponibles per a aquest punt."}
+                {loadingSeries ? tr("preparingSeries") : tr("noDataPoint")}
               </p>
             </div>
           {/if}
@@ -1398,14 +1475,12 @@
         <h2
           class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
         >
-          Què determina l'estrès tèrmic?
+          {tr("factorsTitle")}
         </h2>
 
         <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
           <p class="text-xs leading-relaxed text-slate-300">
-            La sensació de calor o fred no depèn només de la temperatura de
-            l'aire. L'UTCI combina diversos factors ambientals per estimar com
-            respon el cos humà.
+            {tr("factorsIntro")}
           </p>
 
           <div class="mt-3 space-y-3">
@@ -1417,11 +1492,10 @@
               </div>
               <div>
                 <p class="text-xs font-medium text-slate-200">
-                  Temperatura de l'aire
+                  {tr("airTemperature")}
                 </p>
                 <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  És el punt de partida: quan l'aire és més calent o més fred
-                  que el cos, augmenta l'intercanvi de calor amb l'entorn.
+                  {tr("airTemperatureText")}
                 </p>
               </div>
             </div>
@@ -1434,11 +1508,10 @@
               </div>
               <div>
                 <p class="text-xs font-medium text-slate-200">
-                  Humitat de l'aire
+                  {tr("humidity")}
                 </p>
                 <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  Amb molta humitat, la suor s'evapora amb més dificultat i el
-                  cos té més problemes per refredar-se quan fa calor.
+                  {tr("humidityText")}
                 </p>
               </div>
             </div>
@@ -1450,11 +1523,9 @@
                 <span aria-hidden="true">〰</span>
               </div>
               <div>
-                <p class="text-xs font-medium text-slate-200">Vent</p>
+                <p class="text-xs font-medium text-slate-200">{tr("wind")}</p>
                 <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  Afavoreix l'intercanvi de calor entre la pell i l'aire i pot
-                  ajudar a refredar el cos. Amb fred, però, també pot
-                  incrementar la pèrdua de calor.
+                  {tr("windText")}
                 </p>
               </div>
             </div>
@@ -1467,12 +1538,10 @@
               </div>
               <div>
                 <p class="text-xs font-medium text-slate-200">
-                  Radiació solar i tèrmica
+                  {tr("radiation")}
                 </p>
                 <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  El sol directe pot escalfar molt més el cos que no pas estar a
-                  l'ombra. També hi influeix la calor radiada pel terra, les
-                  parets i altres superfícies.
+                  {tr("radiationText")}
                 </p>
               </div>
             </div>
@@ -1482,21 +1551,15 @@
             class="mt-4 rounded-lg border border-teal-300/10 bg-teal-300/5 p-3"
           >
             <p class="text-xs font-medium text-teal-200">
-              I què ens indica l'UTCI?
+              {tr("utciMeaning")}
             </p>
             <p class="mt-1 text-[11px] leading-relaxed text-slate-300">
-              Resumeix l'efecte conjunt d'aquestes condicions en una temperatura
-              equivalent, expressada en °C. No és necessàriament la temperatura
-              que marca un termòmetre: dues situacions amb la mateixa
-              temperatura de l'aire poden produir un estrès tèrmic molt
-              diferent.
+              {tr("utciMeaningText")}
             </p>
           </div>
 
           <p class="mt-3 text-[10px] leading-relaxed text-slate-500">
-            L'UTCI és un índex de referència. L'experiència individual també
-            depèn de l'activitat física, la roba, l'aclimatació i altres factors
-            personals.
+            {tr("referenceIndex")}
           </p>
         </div>
       </section>
