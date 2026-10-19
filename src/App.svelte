@@ -44,7 +44,7 @@
   let displayMode = "utci";
   let selectedHour = 0;
   let selectedPoint = null;
-
+  let showMobileLegend = false;
   //API Territorial
   let selectedMunicipality = "";
   let loadingMunicipality = false;
@@ -1082,7 +1082,7 @@
 </svelte:head>
 
 <div
-  class="flex h-screen min-h-[560px] flex-col overflow-hidden bg-[#0b1118] text-slate-100"
+  class="flex h-dvh min-h-0 flex-col overflow-hidden bg-[#0b1118] text-slate-100"
 >
   <header
     class="z-10 flex h-[62px] shrink-0 items-center justify-between border-b border-white/10 bg-[#101821] px-4 sm:px-6"
@@ -1126,12 +1126,18 @@
   </header>
 
   <main
-    class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[310px_minmax(0,1fr)_400px] lg:grid-rows-1 lg:overflow-hidden"
+    class="grid min-h-0 min-w-0 flex-1 grid-cols-1
+         grid-rows-[max-content_minmax(320px,55dvh)_max-content]
+         overflow-x-hidden overflow-y-auto
+         xl:grid-cols-[280px_minmax(0,1fr)_340px]
+         xl:grid-rows-1 xl:overflow-hidden"
   >
     <aside
-      class="flex flex-col gap-4 border-b border-white/10 bg-[#101821] p-4 lg:overflow-y-auto lg:border-b-0 lg:border-r"
+      class="flex min-h-0 min-w-0 flex-col gap-4
+         border-t border-white/10 bg-[#101821] p-3
+         xl:overflow-y-auto xl:border-t-0 xl:border-r xl:p-4"
     >
-      <section>
+      <section class="shrink-0">
         <div class="mb-2 flex items-center justify-between">
           <h2
             class="text-[11px] font-semibold uppercase tracking-widest text-slate-400"
@@ -1198,7 +1204,7 @@
       </section>
 
       <div class="h-px bg-white/10"></div>
-      <section>
+      <section class="hidden xl:block">
         <h2
           class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
         >
@@ -1248,15 +1254,83 @@
           </p>
         {/if}
       </section>
+      <!-- Llegenda desplegable per a mòbils -->
+      <div class="absolute bottom-16 left-3 z-20 xl:hidden">
+        <button
+          type="button"
+          class="rounded-lg border border-white/15 bg-[#101821]/95 px-3 py-2 text-xs font-medium text-slate-100 shadow-lg backdrop-blur"
+          aria-expanded={showMobileLegend}
+          onclick={() => (showMobileLegend = !showMobileLegend)}
+        >
+          {showMobileLegend ? "✕ " : "🎨 "}
+          {tr("utciLegend")}
+        </button>
+
+        {#if showMobileLegend}
+          <div
+            class="mt-2 max-h-[45dvh] w-[min(340px,calc(100vw-24px))] overflow-y-auto rounded-xl border border-white/10 bg-[#101821]/95 p-3 shadow-xl backdrop-blur"
+          >
+            <h2
+              class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
+            >
+              {displayMode === "utci"
+                ? tr("utciLegend")
+                : tr("stressCategories")}
+            </h2>
+
+            {#if displayMode === "utci"}
+              <div class="mb-2 flex h-2 overflow-hidden rounded-full">
+                {#each classes as item}
+                  <div class="flex-1" style={`background:${item.c}`}></div>
+                {/each}
+              </div>
+
+              <div class="space-y-2">
+                {#each classes as item}
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="h-3 w-3 shrink-0 rounded-sm"
+                      style={`background:${item.c}`}
+                    ></span>
+                    <span class="min-w-0 flex-1 text-xs text-slate-200">
+                      {classLabel(item)}
+                    </span>
+                    <span class="shrink-0 text-[10px] text-slate-400">
+                      {classRange(item)}
+                    </span>
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <div class="space-y-2">
+                {#each classes as item}
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="h-3 w-3 shrink-0 rounded-sm"
+                      style={`background:${item.c}`}
+                    ></span>
+                    <span class="text-xs text-slate-200">
+                      {classLabel(item)}
+                    </span>
+                  </div>
+                {/each}
+              </div>
+
+              <p class="mt-2 text-[10px] text-slate-400">
+                {tr("classificationNote")}
+              </p>
+            {/if}
+          </div>
+        {/if}
+      </div>
     </aside>
 
-    <section
-      class="relative h-full min-h-[420px] min-w-0 bg-[#18232c] lg:min-h-0"
-    >
+    <section class="relative h-full min-h-0 min-w-0 bg-[#18232c]">
       <div
         bind:this={mapContainer}
         class="absolute inset-0 h-full w-full bg-[#18232c]"
       ></div>
+
       {#if initialMapLoading}
         <div
           class="absolute inset-0 z-30 flex flex-col items-center justify-center
@@ -1289,7 +1363,7 @@
     </section>
 
     <aside
-      class="flex flex-col gap-4 border-t border-white/10 bg-[#101821] p-4 lg:overflow-y-auto lg:border-l lg:border-t-0"
+      class="flex min-h-0 min-w-0 flex-col gap-4 border-t border-white/10 bg-[#101821] p-3 xl:overflow-y-auto xl:border-l xl:border-t-0 xl:p-4"
     >
       <section>
         {#if selectedPoint}
