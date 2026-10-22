@@ -27,7 +27,7 @@ npm run preview # serveix el build
 
 App Svelte/Vite d'una sola pàgina. **Pràcticament tota la lògic viu a `src/App.svelte`** (~1600 línies): mapa MapLibre, càrrega de GeoTIFF, classificació de classes, gràfic temporal i tota la UI. No hi ha router ni state management.
 
-- `src/main.js` — munta l'app, importa el CSS de MapLibre i crida `setWorkerUrl()` amb un import `?worker&url`. **Cal mantenir-ho** o el worker de MapLibre no es resol a Vite.
+- `src/main.js` — munta l'app, importa el CSS de MapLibre, crida `setWorkerUrl()` amb un import `?worker&url` i **registra el service worker** (només en producció). **Cal mantenir-ho** o el worker de MapLibre no es resol a Vite.
 - `src/dictionary.js` — totes les traduccions de la UI + `translate(key, language)` i `interpolate(template, vars)` (substitueix `{nom}`).
 - `src/lib/Timeline.svelte` — control temporal (capçalera de data, slider, tira de dies amb indicador lliscant). Component **presentacional**: rep `forecast`, `selectedHour`, `isPlaying` i callbacks (`onPrev`, `onNext`, `onTogglePlay`, `onSelectHour`). Té un **mode compact** propi (matchQuery `(max-width: 1279px)`) que comprimeix la capçalera i els controls per deixar més mapa a les pantalles petites.
 - `src/lib/Legend.svelte` — llegenda de l'escala UTCI, reutilitzada al panell lateral i als fulls mòbils. El títol el posa el pare.
@@ -129,7 +129,27 @@ npm run dev      # en una terminal
 node e2e.mjs     # en una altra
 ```
 
-No forma part de `npm run build` i no s'executa automàticament.
+`pwa-check.mjs` comprova la PWA (registre del service worker, manifest, icones i **mode sense connexió**) amb el servidor de *preview*:
+
+```bash
+npm run preview  # en una terminal
+node pwa-check.mjs  # en una altra
+```
+
+Cap dels dos forma part de `npm run build` i no s'executen automàticament.
+
+## PWA
+
+- `public/manifest.webmanifest` — manifest de l'aplicació. **Totes les rutes són relatives** (`start_url: "."`, `scope: "."`, icones sense `base`): si no, es trenquen en el subdirectori de GitHub Pages.
+- `build/service-worker.js` — plantilla del service worker. El plugin de `vite.config.js` hi injecta la llista de recursos compilats i la versió (hash dels noms), i genera `dist/sw.js`. **No escriguis el `sw.js` a mà**: el fitxer de `dist/` es regenera a cada build.
+- El service worker es registra a `src/main.js` **només en producció**: en desenvolupament interfereix amb el recàrrega en calent de Vite.
+- Els icones PNG es generen amb `node tools/generate-icons.mjs` a partir de `public/favicon.svg` (requereix Chrome; els PNG ja estan versionats, així que la compilació no en depèn).
+- **No es posen a la memòria cau els recursos de tercers** (estil base de l'ICGC, relleu, API): no es redistribueixen dades d'altres. Els ràsters `.tif` sí (són immutables) i se'n conserven els 12 darrers.
+
+## Rutes base (no les canviis)
+
+- `vite.config.js` fixa `base: '/utci-catalonia/'`. `index.html` referencixa a mà `/utci-catalonia/favicon.svg`, `/utci-catalonia/manifest.webmanifest` i `/utci-catalonia/apple-touch-icon.png`. Canviar la base trencarà els assets a GitHub Pages (subdirectori del repo).
+- `src/main.js` registra el service worker amb `import.meta.env.BASE_URL` → el scope és el subdirectori correcte sense tocar res.
 
 ## Estils
 

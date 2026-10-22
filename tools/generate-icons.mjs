@@ -1,0 +1,123 @@
+// Genera els icones de la PWA a partir de public/favicon.svg.
+//
+// Eina opcional: només cal tornar-la a executar si es canvia el logotip.
+//
+//   node tools/generate-icons.mjs
+//
+// Requereix Chrome (per fer la captura del SVG en PNG). Els PNG resultants
+// es versionen al repositori, de manera que la compilació no necessita res
+// d'això.
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+
+const CHROME_PATHS = [
+  "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
+];
+
+const PORT = 9333;
+const ROOT = path.resolve(import.meta.dirname, "..");
+const PUBLIC = path.join(ROOT, "public");
+
+const chrome = CHROME_PATHS.find((p) => fs.existsSync(p));
+
+if (!chrome) {
+  console.error("No s'ha trobat Chrome.");
+  process.exit(1);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const browser = spawn(
+  chrome,
+  [
+    "--headless=new",
+    `--remote-debugging-port=${PORT}`,
+    "--no-first-run",
+    "--disable-gpu",
+    `--user-data-dir=${process.env.TEMP}/cdp-icons-${Date.now()}`,
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
+
+async function endpoint() {
+  for (let i = 0; i < 40; i++) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${PORT}/json/list`);
+      const targets = await res.json();
+      const page = targets.find((t) => t.type === "page");
+      if (page) return page.webSocketDebuggerUrl.replace("localhost", "127.0.0.1");
+    } catch {
+      /* encara no escolta */
+    }
+    await sleep(250);
+  }
+  throw new Error("No s'ha pogut connectar amb Chrome");
+}
+
+const ws = new WebSocket(await endpoint());
+let id = 0;
+const pending = new Map();
+
+ws.addEventListener("message", (event) => {
+  const message = JSON.parse(event.data);
+  if (message.id && pending.has(message.id)) {
+    pending.get(message.id)(message);
+    pending.delete(message.id);
+  }
+});
+
+await new Promise((resolve) => ws.addEventListener("open", resolve));
+
+function send(method, params = {}) {
+  const messageId = ++id;
+  ws.send(JSON.stringify({ id: messageId, method, params }));
+  return new Promise((resolve) => pending.set(messageId, resolve));
+}
+
+const svg = fs.readFileSync(path.join(PUBLIC, "favicon.svg"), "utf8");
+const encoded = Buffer.from(svg).toString("base64");
+
+// Els icones amb "maskable" deixen una zona segura: el contingut va
+// escalat al 60 % i centrat sobre el fons, perquè el sistema pugui
+// retallar elslaterals sense tallar el dibuix.
+const targets = [
+  { file: "icon-192.png", size: 192, scale: 1 },
+  { file: "icon-512.png", size: 512, scale: 1 },
+  { file: "icon-maskable-512.png", size: 512, scale: 0.6 },
+  { file: "apple-touch-icon.png", size: 180, scale: 1 },
+];
+
+await send("Page.enable");
+
+for (const { file, size, scale } of targets) {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    html,body{margin:0;padding:0;width:${size}px;height:${size}px;overflow:hidden;background:#063d3b}
+    img{position:absolute;inset:0;width:100%;height:100%;transform:scale(${scale});transform-origin:center}
+  </style></head><body><img src="data:image/svg+xml;base64,${encoded}"></body></html>`;
+
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: size,
+    height: size,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+
+  await send("Page.navigate", { url: `data:text/html;charset=utf-8,${encodeURIComponent(html)}` });
+  await sleep(400);
+
+  const shot = await send("Page.captureScreenshot", { format: "png" });
+  const buffer = Buffer.from(shot.result.data, "base64");
+
+  fs.writeFileSync(path.join(PUBLIC, file), buffer);
+  console.log(`${file}  ${size}×${size}  ${(buffer.length / 1024).toFixed(1)} kB`);
+}
+
+ws.close();
+browser.kill();
+process.exit(0);
