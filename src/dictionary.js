@@ -25,17 +25,9 @@ export const translations = {
         longitude: "Longitud",
         utciValue: "Valor UTCI",
         noRasterValue: "Sense valor al ràster en aquest punt",
-        noPoint: "Cap punt seleccionat",
         clickMap: "Fes clic al mapa per consultar el valor UTCI.",
-        utciEvolution: "Evolució UTCI · 24 h",
         calculating: "Calculant…",
-        selectPoint: "Selecciona un punt al mapa per veure'n l'evolució temporal.",
-        localHour: "UTCI (°C) · Hora local",
-        next24Hours: "Evolució de l'UTCI durant les pròximes 24 hores",
-        eachPoint: "Cada punt representa un instant de previsió separat per 3 hores.",
-        preparingSeries: "Preparant la sèrie temporal…",
         noDataPoint: "No hi ha dades disponibles per a aquest punt.",
-        factorsTitle: "Què determina l'estrès tèrmic?",
         factorsIntro: "La sensació de calor o fred no depèn només de la temperatura de l'aire. L'UTCI combina diversos factors ambientals per estimar com respon el cos humà.",
         airTemperature: "Temperatura de l'aire",
         airTemperatureText: "És el punt de partida: quan l'aire és més calent o més fred que el cos, augmenta l'intercanvi de calor amb l'entorn.",
@@ -71,7 +63,29 @@ export const translations = {
         range38to46: "38 a 46 °C",
         rangeAbove46: "> 46 °C",
         rasterError: "No s’ha pogut preparar el ràster.",
-        forecastError: "No s’ha pogut llegir la previsió."
+        forecastError: "No s’ha pogut llegir la previsió.",
+        today: "Avui",
+        tomorrow: "Demà",
+        yesterday: "Ahir",
+        close: "Tanca",
+        legendButton: "Llegenda",
+        legendPanel: "Llegenda de l’UTCI",
+        stepCounter: "Pas {n} de {total}",
+        offsetLabel: "+{h} h",
+        dayStripLabel: "Dies de la previsió",
+        selectDay: "Mostra el {day}",
+        forecastOutdated: "La previsió publicada ja ha passat. Les dades poden ser obsoletes.",
+        chartTitle: "Evolució UTCI",
+        chartHint: "Clica la gràfica per canviar de fotograma.",
+        pointPanel: "Informació del punt",
+        infoToggle: "Què determina l’estrès tèrmic?",
+        infoPanel: "Sobre l’UTCI",
+        infoButton: "Info",
+        geolocate: "Troba la meva ubicació",
+        geolocationUnavailable: "Ubicació no disponible",
+        geolocationError: "No s’ha pogut obtenir la teva ubicació. Revisa els permisos del navegador.",
+        zoomIn: "Aproxima",
+        zoomOut: "Allunya"
     },
 
     en: {
@@ -98,17 +112,9 @@ export const translations = {
         longitude: "Longitude",
         utciValue: "UTCI value",
         noRasterValue: "No raster value at this location",
-        noPoint: "No point selected",
         clickMap: "Click the map to inspect the UTCI value.",
-        utciEvolution: "UTCI evolution · 24 h",
         calculating: "Calculating…",
-        selectPoint: "Select a point on the map to view its evolution over time.",
-        localHour: "UTCI (°C) · Local time",
-        next24Hours: "UTCI evolution over the next 24 hours",
-        eachPoint: "Each point represents a forecast time step, 3 hours apart.",
-        preparingSeries: "Preparing time series…",
         noDataPoint: "No data available for this location.",
-        factorsTitle: "What determines thermal stress?",
         factorsIntro: "Thermal comfort does not depend on air temperature alone. UTCI combines several environmental factors to estimate how the human body responds.",
         airTemperature: "Air temperature",
         airTemperatureText: "It is the starting point: when the air is warmer or colder than the body, heat exchange with the surroundings increases.",
@@ -144,10 +150,41 @@ export const translations = {
         range38to46: "38 to 46 °C",
         rangeAbove46: "> 46 °C",
         rasterError: "Could not prepare the raster.",
-        forecastError: "Could not read the forecast."
+        forecastError: "Could not read the forecast.",
+        today: "Today",
+        tomorrow: "Tomorrow",
+        yesterday: "Yesterday",
+        close: "Close",
+        legendButton: "Legend",
+        legendPanel: "UTCI legend",
+        stepCounter: "Step {n} of {total}",
+        offsetLabel: "+{h} h",
+        dayStripLabel: "Forecast days",
+        selectDay: "Show {day}",
+        forecastOutdated: "The published forecast has expired. The data may be outdated.",
+        chartTitle: "UTCI evolution",
+        chartHint: "Click the chart to change the forecast frame.",
+        pointPanel: "Point information",
+        infoToggle: "What determines thermal stress?",
+        infoPanel: "About UTCI",
+        infoButton: "Info",
+        geolocate: "Find my location",
+        geolocationUnavailable: "Location not available",
+        geolocationError: "Could not get your location. Check the browser permissions.",
+        zoomIn: "Zoom in",
+        zoomOut: "Zoom out"
     }
 };
 
 export function translate(key, language = "ca") {
     return translations[language]?.[key] ?? translations.ca[key] ?? key;
+}
+
+// Substitueix els marcadors {nom} d'un text pels valors donats.
+export function interpolate(template, vars = {}) {
+    return String(template).replace(/\{(\w+)\}/g, (match, key) =>
+        Object.prototype.hasOwnProperty.call(vars, key)
+            ? String(vars[key])
+            : match,
+    );
 }

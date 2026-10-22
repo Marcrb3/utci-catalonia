@@ -1,9 +1,23 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { fromArrayBuffer } from "geotiff";
   import proj4 from "proj4";
   import { translations } from "./dictionary.js";
+  import Timeline from "./lib/Timeline.svelte";
+  import Legend from "./lib/Legend.svelte";
+  import Sheet from "./lib/Sheet.svelte";
+  import PointPanel from "./lib/PointPanel.svelte";
+  import InfoPanel from "./lib/InfoPanel.svelte";
+  import { classes, labelForClass, getClass } from "./lib/utci-classes.js";
+  import {
+    formatTime,
+    formatWeekdayShort,
+    formatDateShort,
+    formatShortDateTime,
+    relativeDayLabel,
+    firstVisibleIndex,
+  } from "./lib/time.js";
 
   proj4.defs(
     "EPSG:25831",
@@ -20,36 +34,19 @@
   // In legacy Svelte reactivity, make the translator itself reactive.
   // This invalidates every {tr("...")} expression when language changes.
   $: tr = (key) => translations[language]?.[key] ?? translations.ca[key] ?? key;
-  const classLabels = {
-    "Fred extrem": "extremeCold",
-    "Fred molt fort": "veryStrongCold",
-    "Fred fort": "strongCold",
-    "Fred moderat": "moderateCold",
-    "Fred lleu": "slightCold",
-    "Sense estrès tèrmic": "noHeatStress",
-    "Calor moderada": "moderateHeat",
-    "Calor forta": "strongHeat",
-    "Calor molt forta": "veryStrongHeat",
-    "Calor extrema": "extremeHeat",
-  };
-  $: classLabel = (item) => tr(classLabels[item.label] ?? item.label);
-  const rangeKeys = {
-    "< −40 °C": "rangeBelow40",
-    "−40 a −27 °C": "range40to27",
-    "−27 a −13 °C": "range27to13",
-    "−13 a 0 °C": "range13to0",
-    "0 a 9 °C": "range0to9",
-    "9 a 26 °C": "range9to26",
-    "26 a 32 °C": "range26to32",
-    "32 a 38 °C": "range32to38",
-    "38 a 46 °C": "range38to46",
-    "> 46 °C": "rangeAbove46",
-  };
-  $: classRange = (item) => tr(rangeKeys[item.range] ?? item.range);
+  // Els texts de classe i els intervals viuen a src/lib/utci-classes.js
+  // perquè la llegenda els pugui reutilitzar sense duplicar el mapeig.
+  $: classLabel = (item) => labelForClass(item, language);
   let displayMode = "utci";
   let selectedHour = 0;
   let selectedPoint = null;
   let showMobileLegend = false;
+  let showInfoSheet = false;
+  let infoOpen = false;
+  let legendButton;
+  let selectedMarker = null;
+  let geolocateControl = null;
+  let geoError = "";
   //API Territorial
   let selectedMunicipality = "";
   let loadingMunicipality = false;
@@ -75,87 +72,22 @@
   let rasterPreparationCache = new Map();
 
   let currentRaster = null;
+  let displayedPrepared = null;
+  let fadeRequestId = 0;
   let requestId = 0;
   let preloadPromise = null;
   let destroyed = false;
 
   const PRELOAD_CONCURRENCY = 2;
   const PLAYBACK_INTERVAL_MS = 900;
+  const RASTER_OPACITY = 0.88;
+  const RASTER_FADE_MS = 260;
 
   let seriesRequestId = 0;
   let seriesPointKey = null;
   let pointSeries = [];
 
-  const HOURS_IN_CHART = 24;
-  const FORECAST_INTERVAL_HOURS = 3;
-  const CHART_POINTS = HOURS_IN_CHART / FORECAST_INTERVAL_HOURS + 1;
-
-  const classes = [
-    {
-      c: "#542788",
-      label: "Fred extrem",
-      range: "< −40 °C",
-      min: -Infinity,
-      max: -40,
-    },
-    {
-      c: "#4169b1",
-      label: "Fred molt fort",
-      range: "−40 a −27 °C",
-      min: -40,
-      max: -27,
-    },
-    {
-      c: "#56b9ce",
-      label: "Fred fort",
-      range: "−27 a −13 °C",
-      min: -27,
-      max: -13,
-    },
-    {
-      c: "#8dd3c7",
-      label: "Fred moderat",
-      range: "−13 a 0 °C",
-      min: -13,
-      max: 0,
-    },
-    { c: "#b7d85b", label: "Fred lleu", range: "0 a 9 °C", min: 0, max: 9 },
-    {
-      c: "#62b77a",
-      label: "Sense estrès tèrmic",
-      range: "9 a 26 °C",
-      min: 9,
-      max: 26,
-    },
-    {
-      c: "#f1d34f",
-      label: "Calor moderada",
-      range: "26 a 32 °C",
-      min: 26,
-      max: 32,
-    },
-    {
-      c: "#ec8744",
-      label: "Calor forta",
-      range: "32 a 38 °C",
-      min: 32,
-      max: 38,
-    },
-    {
-      c: "#d94d4d",
-      label: "Calor molt forta",
-      range: "38 a 46 °C",
-      min: 38,
-      max: 46,
-    },
-    {
-      c: "#8d202b",
-      label: "Calor extrema",
-      range: "> 46 °C",
-      min: 46,
-      max: Infinity,
-    },
-  ];
+  let forecastOutdated = false;
 
   $: if (language) {
     if (statusMessage === "Carregant forecast.json")
@@ -178,9 +110,17 @@
   }
   $: totalHours = Math.max(0, forecast.length - 1);
   $: activeForecast = forecast[Number(selectedHour)] ?? null;
-  $: hourLabel = formatDate(
-    activeForecast?.valid_time ?? activeForecast?.validTime,
-  );
+  $: activeTime =
+    activeForecast?.valid_time ?? activeForecast?.validTime ?? null;
+
+  // Etiquetes del badge de data que surten sobre el mapa.
+  $: badgeTime = formatTime(activeTime, language);
+  $: badgeWeekday = formatWeekdayShort(activeTime, language);
+  $: badgeDate = formatDateShort(activeTime, language);
+  $: badgeRelative = relativeDayLabel(activeTime, language);
+
+  // Les etiquetes dels controls de MapLibre segueixen l'idioma.
+  $: if (map && language) updateControlLabels();
 
   $: selectedValue = (() => {
     language;
@@ -189,11 +129,9 @@
       : null;
   })();
 
-  // Finestra temporal de 24 hores a partir de l'hora seleccionada.
-  $: chartSeries = pointSeries;
-  $: chartRange = getChartRange(chartSeries);
+  // La sèrie temporal cobreix tota la previsió: es calcula una sola vegada
+  // per punt (no a cada canvi de fotograma).
   $: if (selectedPoint && forecast.length && !loadingForecast) {
-    selectedHour;
     language;
     updatePointSeries(selectedPoint);
   } else if (!selectedPoint) {
@@ -201,46 +139,6 @@
     seriesPointKey = null;
     pointSeries = [];
     loadingSeries = false;
-  }
-
-  function formatDate(value) {
-    if (!value) return "—";
-    const d = new Date(value);
-
-    return Number.isNaN(d.getTime())
-      ? String(value)
-      : new Intl.DateTimeFormat(language === "ca" ? "ca-ES" : "en-GB", {
-          weekday: "short",
-          day: "2-digit",
-          month: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: "Europe/Madrid",
-        }).format(d);
-  }
-
-  function shortTime(value) {
-    if (!value) return "—";
-    const d = new Date(value);
-
-    return Number.isNaN(d.getTime())
-      ? String(value)
-      : new Intl.DateTimeFormat(language === "ca" ? "ca-ES" : "en-GB", {
-          day: "2-digit",
-          month: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: "Europe/Madrid",
-        }).format(d);
-  }
-
-  function getClass(value) {
-    return (
-      classes.find(
-        (item, i) =>
-          value >= item.min && (value < item.max || i === classes.length - 1),
-      ) ?? classes[0]
-    );
   }
 
   function hexRgb(hex) {
@@ -392,10 +290,11 @@
       if (map.getLayer("utci-raster-layer")) {
         map.moveLayer("utci-raster-layer", primeraCapaText.id);
       }
-    }
 
-    if (map.getLayer("selected-point-layer")) {
-      map.moveLayer("selected-point-layer");
+      // La capa auxiliar queda a sobre: en fading deixa veure la nova.
+      if (map.getLayer("utci-raster-prev-layer")) {
+        map.moveLayer("utci-raster-prev-layer", primeraCapaText.id);
+      }
     }
   }
 
@@ -556,9 +455,8 @@
     const source = map.getSource("utci-raster-source");
 
     if (source) {
-      source.updateImage({
-        url: prepared.imageUrl,
-        coordinates: prepared.coordinates,
+      crossFadeRaster(prepared).catch((error) => {
+        console.warn("No s'ha pogut fer el cross-fade del ràster:", error);
       });
     } else {
       map.addSource("utci-raster-source", {
@@ -572,7 +470,24 @@
         type: "raster",
         source: "utci-raster-source",
         paint: {
-          "raster-opacity": 0.88,
+          "raster-opacity": RASTER_OPACITY,
+          "raster-resampling": "nearest",
+        },
+      });
+
+      // Capa auxiliar buida: allotja la imatge anterior durant el cross-fade.
+      map.addSource("utci-raster-prev-source", {
+        type: "image",
+        url: prepared.imageUrl,
+        coordinates: prepared.coordinates,
+      });
+
+      map.addLayer({
+        id: "utci-raster-prev-layer",
+        type: "raster",
+        source: "utci-raster-prev-source",
+        paint: {
+          "raster-opacity": 0,
           "raster-resampling": "nearest",
         },
       });
@@ -581,8 +496,96 @@
     }
 
     currentRaster = prepared.raster;
+    displayedPrepared = prepared;
     statusMessage = tr("rasterLoaded");
     initialRasterReady = true;
+  }
+
+  // Espera que la font d'una imarga estigui carregada (amb límit de temps).
+  function waitForSourceData(source, timeout = 400) {
+    return new Promise((resolve) => {
+      let settled = false;
+
+      const finish = () => {
+        if (settled) return;
+
+        settled = true;
+        clearTimeout(timer);
+        source.off("data", finish);
+        resolve();
+      };
+
+      const timer = setTimeout(finish, timeout);
+
+      source.once("data", finish);
+    });
+  }
+
+  // Cross-fade entre fotogrames.
+  //
+  // La imatge anterior viu en una capa auxiliar, per sobre de la capa
+  // principal. Quan canvia el fotograma: la auxiliar carrega la imatge que
+  // es veia, es torna a mostrar, la principal rep la nova per sota i,
+  // quan la nova ja és carregada, la auxiliar s'apaga.
+  async function crossFadeRaster(prepared) {
+    const id = ++fadeRequestId;
+
+    const source = map?.getSource("utci-raster-source");
+    const previous = map?.getSource("utci-raster-prev-source");
+
+    if (!source || !previous) return;
+
+    const current = displayedPrepared;
+
+    if (!current || current.url === prepared.url) {
+      source.updateImage({
+        url: prepared.imageUrl,
+        coordinates: prepared.coordinates,
+      });
+
+      return;
+    }
+
+    // La capa auxiliar amaga de cop: si un cross-fade anterior s'ha
+    // quedat a mitges, no deixem una imatge vella penjada.
+    setPreviousRasterOpacity(0, 0);
+
+    // 1) La capa auxiliar carrega la imatge que es mostra ara.
+    previous.updateImage({
+      url: current.imageUrl,
+      coordinates: current.coordinates,
+    });
+
+    await waitForSourceData(previous);
+
+    if (id !== fadeRequestId || destroyed) return;
+
+    // 2) La imatge actualitzada es torna a veure: ara és la superior.
+    setPreviousRasterOpacity(RASTER_OPACITY, 0);
+
+    // 3) La nova entra per sota.
+    source.updateImage({
+      url: prepared.imageUrl,
+      coordinates: prepared.coordinates,
+    });
+
+    await waitForSourceData(source);
+
+    if (id !== fadeRequestId || destroyed) return;
+
+    // 4) La vella es fon i deixa veure la nova.
+    setPreviousRasterOpacity(0, RASTER_FADE_MS);
+  }
+
+  function setPreviousRasterOpacity(value, duration) {
+    if (!map?.getLayer("utci-raster-prev-layer")) return;
+
+    map.setPaintProperty("utci-raster-prev-layer", "raster-opacity-transition", {
+      duration,
+      delay: 0,
+    });
+
+    map.setPaintProperty("utci-raster-prev-layer", "raster-opacity", value);
   }
 
   function waitForInitialRasterRender() {
@@ -761,6 +764,65 @@
     return `${point.lng.toFixed(6)},${point.lat.toFixed(6)}`;
   }
 
+  // El punt seleccionat es dibuixa amb un marker HTML: permet una
+  // animació de pols en CSS sense obligar el mapa a redibuixar-se.
+  function updateMarker(point) {
+    if (!map) return;
+
+    if (!point) {
+      selectedMarker?.remove();
+      selectedMarker = null;
+      return;
+    }
+
+    if (!selectedMarker) {
+      const element = document.createElement("div");
+
+      element.className = "selected-marker";
+      element.innerHTML =
+        '<span class="selected-marker__pulse"></span>' +
+        '<span class="selected-marker__dot"></span>';
+
+      selectedMarker = new maplibregl.Marker({
+        element,
+        anchor: "center",
+      })
+        .setLngLat([point.lng, point.lat])
+        .addTo(map);
+      return;
+    }
+
+    selectedMarker.setLngLat([point.lng, point.lat]);
+  }
+
+  function closePointPanel() {
+    selectedPoint = null;
+    updateMarker(null);
+  }
+
+  // Els controls de MapLibre són en anglès per defecte: en traduïm les
+  // etiquetes quan canvia l'idioma de l'aplicació.
+  function updateControlLabels() {
+    if (!map) return;
+
+    const container = map.getContainer();
+
+    container
+      .querySelector(".maplibregl-ctrl-zoom-in")
+      ?.setAttribute("aria-label", tr("zoomIn"));
+
+    container
+      .querySelector(".maplibregl-ctrl-zoom-out")
+      ?.setAttribute("aria-label", tr("zoomOut"));
+
+    const geoButton = container.querySelector(".maplibregl-ctrl-geolocate");
+
+    if (geoButton) {
+      geoButton.title = tr("geolocate");
+      geoButton.setAttribute("aria-label", tr("geolocate"));
+    }
+  }
+
   async function updatePointSeries(point) {
     if (!point || !forecast.length) {
       seriesRequestId += 1;
@@ -769,14 +831,14 @@
       return;
     }
 
-    const key = `${pointKey(point)}:${selectedHour}:${language}`;
+    // La clau no inclou el fotograma: la sèrie és la mateixa per a tota la
+    // previsió i només cal recalcular-la si canvia el punt o l'idioma.
+    const key = `${pointKey(point)}:${language}`;
 
     if (key === seriesPointKey) return;
 
     seriesPointKey = key;
     const id = ++seriesRequestId;
-    const start = Number(selectedHour);
-    const end = Math.min(start + CHART_POINTS, forecast.length);
 
     loadingSeries = true;
     pointSeries = [];
@@ -784,7 +846,7 @@
     try {
       const results = [];
 
-      for (let index = start; index < end; index++) {
+      for (let index = 0; index < forecast.length; index++) {
         if (id !== seriesRequestId) return;
 
         const item = forecast[index];
@@ -797,7 +859,7 @@
           results.push({
             index,
             time,
-            label: shortTime(time),
+            label: formatShortDateTime(time, language),
             value: sample?.value ?? null,
             color: sample?.color ?? "#64748b",
           });
@@ -807,7 +869,7 @@
           results.push({
             index,
             time,
-            label: shortTime(time),
+            label: formatShortDateTime(time, language),
             value: null,
             color: "#64748b",
           });
@@ -824,70 +886,35 @@
     }
   }
 
-  function getChartRange(series) {
-    const valid = series.map((p) => p.value).filter((v) => Number.isFinite(v));
-
-    if (!valid.length) {
-      return { min: 0, max: 40, ticks: [0, 10, 20, 30, 40] };
-    }
-
-    let min = Math.floor(Math.min(...valid) / 5) * 5;
-    let max = Math.ceil(Math.max(...valid) / 5) * 5;
-
-    if (min === max) {
-      min -= 5;
-      max += 5;
-    }
-
-    const step = Math.max(5, Math.ceil((max - min) / 4 / 5) * 5);
-    min = Math.floor(min / step) * step;
-    max = Math.ceil(max / step) * step;
-
-    const ticks = [];
-    for (let v = min; v <= max; v += step) ticks.push(v);
-
-    return { min, max, ticks };
-  }
-
-  function chartX(index) {
-    const left = 36;
-    const right = 286;
-    const start = Number(selectedHour);
-    const end = Math.min(start + CHART_POINTS - 1, forecast.length - 1);
-
-    if (end <= start) return (left + right) / 2;
-
-    return left + ((index - start) / (end - start)) * (right - left);
-  }
-
-  function chartY(value) {
-    const { min, max } = chartRange;
-    const top = 20;
-    const bottom = 108;
-
-    return bottom - ((value - min) / (max - min || 1)) * (bottom - top);
-  }
-
-  function chartLineSegments() {
-    const validPoints = chartSeries
-      .map((p, i) => ({
-        x: chartX(i),
-        y: chartY(p.value),
-        value: p.value,
-      }))
-      .filter((p) => Number.isFinite(p.value));
-
-    if (validPoints.length < 2) return [];
-
-    return [validPoints.map((p) => `${p.x},${p.y}`).join(" ")];
-  }
-
   function selectMode(mode) {
     displayMode = mode;
   }
 
   function changeHour(n) {
     selectedHour = Math.max(0, Math.min(totalHours, Number(selectedHour) + n));
+  }
+
+  // Full de la llegenda per a mòbil: el focus torna al botó que l'ha obert.
+  async function openLegend() {
+    showMobileLegend = true;
+    await tick();
+  }
+
+  async function closeLegend() {
+    if (!showMobileLegend) return;
+
+    showMobileLegend = false;
+    await tick();
+    legendButton?.focus();
+  }
+
+  function handleKeydown(event) {
+    if (event.key !== "Escape") return;
+
+    // Els fulls tenen el seu propi Escape: no tanquem el panell del punt.
+    if (showMobileLegend || showInfoSheet) return;
+
+    closePointPanel();
   }
 
   function stopPlayback() {
@@ -949,11 +976,14 @@
   }
 
   onMount(() => {
+    // En pantalles petites cal un zoom més baix per veure Catalunya sencera.
+    const isNarrow = window.innerWidth < 768;
+
     map = new maplibregl.Map({
       container: mapContainer,
       style: "https://geoserveis.icgc.cat/contextmaps/icgc_mapa_base_fosc.json",
-      center: [1.7, 41.7],
-      zoom: 7.5,
+      center: isNarrow ? [1.95, 41.72] : [1.7, 41.7],
+      zoom: isNarrow ? 6.2 : 7.5,
       minZoom: 6,
 
       maxPitch: 85,
@@ -969,30 +999,45 @@
     attribution._container.classList.add("maplibregl-compact");
     attribution._container.classList.remove("maplibregl-compact-show");
 
+    // Geolocalització: situa el mapa a la posició de l'usuari i obre el
+    // panell de previsió per aquest punt.
+    geolocateControl = new maplibregl.GeolocateControl({
+      position: "top-left",
+      trackUserLocation: false,
+      showUserLocation: false,
+      showAccuracyCircle: true,
+      positionOptions: { enableHighAccuracy: true, timeout: 10000 },
+    });
+
+    map.addControl(geolocateControl);
+
+    geolocateControl.on("geolocate", (event) => {
+      geoError = "";
+
+      const point = { lng: event.lngLat.lng, lat: event.lngLat.lat };
+
+      selectedPoint = point;
+      updateMarker(point);
+      consultarMunicipi(point);
+
+      map.easeTo({
+        center: event.lngLat,
+        zoom: Math.max(map.getZoom(), 9.5),
+        duration: 700,
+      });
+    });
+
+    geolocateControl.on("error", (event) => {
+      console.warn("Error de geolocalització:", event.error);
+
+      geoError = "geolocationError";
+    });
+
+    updateControlLabels();
+
     map.on("load", async () => {
       afegirHillshade();
       map.resize();
-
-      // Punt de selecció: independent de la capa UTCI.
-      map.addSource("selected-point-source", {
-        type: "geojson",
-        data: {
-          type: "FeatureCollection",
-          features: [],
-        },
-      });
-
-      map.addLayer({
-        id: "selected-point-layer",
-        type: "circle",
-        source: "selected-point-source",
-        paint: {
-          "circle-radius": 6,
-          "circle-color": "red",
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 2,
-        },
-      });
 
       try {
         const response = await fetch("./data/forecast.json", {
@@ -1012,7 +1057,7 @@
           throw new Error("forecast.json no conté fitxers a «files».");
         }
 
-        forecast = entries
+        const sorted = entries
           .filter((x) => x && (x.url || x.path || x.href || x.filename))
           .sort(
             (a, b) =>
@@ -1020,9 +1065,21 @@
               new Date(b.valid_time || b.validTime || 0),
           );
 
+        // No es mostren previsions de dies anteriors: la llista comença
+        // pel darrer pas anterior a «ara».
+        const start = firstVisibleIndex(sorted, new Date());
+
+        forecast = sorted.slice(start);
+
         if (!forecast.length) {
           throw new Error("No s'han trobat entrades de TIFF al manifest.");
         }
+
+        // El manifest ja no cobreix el moment actual.
+        const last = forecast[forecast.length - 1];
+        const lastTime = new Date(last.valid_time || last.validTime || 0);
+
+        forecastOutdated = lastTime.getTime() < Date.now();
 
         loadingForecast = false;
         preloadAllRasters();
@@ -1041,21 +1098,7 @@
       };
 
       selectedPoint = point;
-
-      map.getSource("selected-point-source")?.setData({
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            geometry: {
-              type: "Point",
-              coordinates: [point.lng, point.lat],
-            },
-            properties: {},
-          },
-        ],
-      });
-      ordenarCapes();
+      updateMarker(point);
       consultarMunicipi(point);
     });
 
@@ -1066,6 +1109,8 @@
     resizeObserver = new ResizeObserver(() => map?.resize());
     resizeObserver.observe(mapContainer);
 
+    window.addEventListener("keydown", handleKeydown);
+
     return () => {
       destroyed = true;
       stopPlayback();
@@ -1075,6 +1120,10 @@
       municipalityRequestId += 1;
 
       resizeObserver?.disconnect();
+      window.removeEventListener("keydown", handleKeydown);
+
+      selectedMarker?.remove();
+      selectedMarker = null;
 
       for (const prepared of rasterImageCache.values()) {
         URL.revokeObjectURL(prepared.imageUrl);
@@ -1131,13 +1180,13 @@
       >
         <button
           type="button"
-          class={`rounded-md px-2 py-1 ${language === "ca" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+          class={`rounded-md px-2 py-1 transition-colors duration-150 active:scale-[0.95] ${language === "ca" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
           aria-pressed={language === "ca"}
           onclick={() => (language = "ca")}>CA</button
         >
         <button
           type="button"
-          class={`rounded-md px-2 py-1 ${language === "en" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+          class={`rounded-md px-2 py-1 transition-colors duration-150 active:scale-[0.95] ${language === "en" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
           aria-pressed={language === "en"}
           onclick={() => (language = "en")}>EN</button
         >
@@ -1151,9 +1200,9 @@
 
   <main
     class="grid min-h-0 min-w-0 flex-1 grid-cols-1
-         grid-rows-[max-content_minmax(320px,55dvh)_max-content]
+         grid-rows-[max-content_minmax(320px,55dvh)]
          overflow-x-hidden overflow-y-auto
-         xl:grid-cols-[280px_minmax(0,1fr)_340px]
+         xl:grid-cols-[clamp(300px,23vw,390px)_minmax(0,1fr)]
          xl:grid-rows-1 xl:overflow-hidden"
   >
     <aside
@@ -1162,61 +1211,24 @@
          xl:overflow-y-auto xl:border-t-0 xl:border-r xl:p-4"
     >
       <section class="shrink-0">
-        <div class="mb-2 flex items-center justify-between">
-          <h2
-            class="text-[11px] font-semibold uppercase tracking-widest text-slate-400"
+        <Timeline
+          {forecast}
+          {language}
+          selectedHour={Number(selectedHour)}
+          {isPlaying}
+          onPrev={() => changeHour(-1)}
+          onNext={() => changeHour(1)}
+          onTogglePlay={togglePlayback}
+          onSelectHour={(index) => (selectedHour = index)}
+        />
+
+        {#if forecastOutdated}
+          <p
+            class="mt-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] text-amber-200"
           >
-            {tr("forecastTime")}
-          </h2>
-          <span class="text-[10px] text-slate-500">
-            {forecast.length
-              ? `${Number(selectedHour) + 1}/${forecast.length}`
-              : "—"}
-          </span>
-        </div>
-
-        <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
-          <div class="mb-2 flex justify-between gap-2">
-            <span class="text-[11px] text-slate-500">{tr("localTime")}</span>
-            <span class="text-right text-sm font-semibold text-teal-200"
-              >{hourLabel}</span
-            >
-          </div>
-
-          <input
-            type="range"
-            min="0"
-            max={totalHours}
-            step="1"
-            bind:value={selectedHour}
-            disabled={!forecast.length}
-            aria-label={tr("forecastHour")}
-            class="time-slider w-full"
-          />
-
-          <div class="mt-3 flex items-center gap-2">
-            <button
-              class="h-8 w-8 rounded-lg border border-white/10 disabled:opacity-40"
-              onclick={() => changeHour(-1)}
-              disabled={!forecast.length || Number(selectedHour) === 0}
-              aria-label={tr("previousHour")}>‹</button
-            >
-
-            <button
-              class="h-8 flex-1 rounded-lg border border-teal-300/20 bg-teal-300/10 text-xs text-teal-200 disabled:opacity-40"
-              onclick={togglePlayback}
-              disabled={forecast.length < 2}
-              >{isPlaying ? tr("pause") : tr("play")}</button
-            >
-
-            <button
-              class="h-8 w-8 rounded-lg border border-white/10 disabled:opacity-40"
-              onclick={() => changeHour(1)}
-              disabled={!forecast.length || Number(selectedHour) >= totalHours}
-              aria-label={tr("nextHour")}>›</button
-            >
-          </div>
-        </div>
+            {tr("forecastOutdated")}
+          </p>
+        {/if}
 
         {#if errorMessage}
           <p
@@ -1235,118 +1247,41 @@
           {displayMode === "utci" ? tr("utciLegend") : tr("stressCategories")}
         </h2>
 
-        {#if displayMode === "utci"}
-          <div class="mb-2 flex h-2 overflow-hidden rounded-full">
-            {#each classes as item}
-              <div class="flex-1" style={`background:${item.c}`}></div>
-            {/each}
-          </div>
-
-          <div class="space-y-1.5">
-            {#each classes as item}
-              <div class="flex items-center gap-2">
-                <span
-                  class="h-2.5 w-2.5 shrink-0 rounded-sm"
-                  style={`background:${item.c}`}
-                ></span>
-                <span class="min-w-0 flex-1 text-sm text-slate-200">
-                  {classLabel(item)}
-                </span>
-                <span class="shrink-0 text-[10px] text-slate-500"
-                  >{classRange(item)}</span
-                >
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="space-y-2">
-            {#each classes as item}
-              <div class="flex items-center gap-2">
-                <span
-                  class="h-3 w-3 shrink-0 rounded-sm"
-                  style={`background:${item.c}`}
-                ></span>
-                <span class="text-[11px] text-slate-300"
-                  >{classLabel(item)}</span
-                >
-              </div>
-            {/each}
-          </div>
-
-          <p class="mt-2 text-[10px] text-slate-600">
-            {tr("classificationNote")}
-          </p>
-        {/if}
+        <Legend {classes} {language} {displayMode} />
       </section>
-      <!-- Llegenda desplegable per a mòbils -->
-      <div class="absolute bottom-16 left-3 z-20 xl:hidden">
+
+      <!-- Secció informativa: acordió a l'escriptori, full al mòbil. -->
+      <section class="hidden xl:block">
         <button
           type="button"
-          class="rounded-lg border border-white/15 bg-[#101821]/95 px-3 py-2 text-xs font-medium text-slate-100 shadow-lg backdrop-blur"
-          aria-expanded={showMobileLegend}
-          onclick={() => (showMobileLegend = !showMobileLegend)}
+          class="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-[#0b1118]
+                 px-3 py-2.5 text-left text-xs font-medium text-slate-200
+                 transition-colors hover:border-white/20 hover:bg-white/5"
+          aria-expanded={infoOpen}
+          onclick={() => (infoOpen = !infoOpen)}
         >
-          {showMobileLegend ? "✕ " : "🎨 "}
-          {tr("utciLegend")}
+          <span
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-teal-300/10 text-teal-200"
+            aria-hidden="true">ⓘ</span
+          >
+
+          <span class="min-w-0 flex-1 truncate">{tr("infoToggle")}</span>
+
+          <span
+            class="chevron shrink-0 text-slate-500 transition-transform duration-200 ease-out"
+            class:rotate-180={infoOpen}
+            aria-hidden="true">▾</span
+          >
         </button>
 
-        {#if showMobileLegend}
-          <div
-            class="mt-2 max-h-[45dvh] w-[min(340px,calc(100vw-24px))] overflow-y-auto rounded-xl border border-white/10 bg-[#101821]/95 p-3 shadow-xl backdrop-blur"
-          >
-            <h2
-              class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
-            >
-              {displayMode === "utci"
-                ? tr("utciLegend")
-                : tr("stressCategories")}
-            </h2>
-
-            {#if displayMode === "utci"}
-              <div class="mb-2 flex h-2 overflow-hidden rounded-full">
-                {#each classes as item}
-                  <div class="flex-1" style={`background:${item.c}`}></div>
-                {/each}
-              </div>
-
-              <div class="space-y-2">
-                {#each classes as item}
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="h-3 w-3 shrink-0 rounded-sm"
-                      style={`background:${item.c}`}
-                    ></span>
-                    <span class="min-w-0 flex-1 text-xs text-slate-200">
-                      {classLabel(item)}
-                    </span>
-                    <span class="shrink-0 text-[10px] text-slate-400">
-                      {classRange(item)}
-                    </span>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <div class="space-y-2">
-                {#each classes as item}
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="h-3 w-3 shrink-0 rounded-sm"
-                      style={`background:${item.c}`}
-                    ></span>
-                    <span class="text-xs text-slate-200">
-                      {classLabel(item)}
-                    </span>
-                  </div>
-                {/each}
-              </div>
-
-              <p class="mt-2 text-[10px] text-slate-400">
-                {tr("classificationNote")}
-              </p>
-            {/if}
+        <div class="info-grid" class:is-open={infoOpen}>
+          <div class="overflow-hidden">
+            <div class="pt-2">
+              <InfoPanel {language} />
+            </div>
           </div>
-        {/if}
-      </div>
+        </div>
+      </section>
     </aside>
 
     <section class="relative h-full min-h-0 min-w-0 bg-[#18232c]">
@@ -1375,294 +1310,137 @@
         </div>
       {/if}
 
+      <!-- Botons flotants: només en pantalles petites. -->
       <div
-        class="pointer-events-none absolute bottom-4 left-1/2 z-10
-         -translate-x-1/2 rounded-lg border border-white/10
-         bg-[#101821]/95 px-4 py-2 text-center shadow-lg"
+        class="absolute bottom-12 left-3 z-20 flex items-center gap-2 xl:hidden"
       >
-        <p class="mt-0.5 whitespace-nowrap text-sm font-semibold text-teal-200">
-          {hourLabel}
-        </p>
+        <button
+          type="button"
+          bind:this={legendButton}
+          class="flex items-center gap-2 rounded-full border border-white/15
+                 bg-[#101821]/95 px-3 py-2 text-[11px] font-medium text-slate-100
+                 shadow-lg backdrop-blur transition-transform active:scale-[0.97]"
+          aria-haspopup="dialog"
+          aria-expanded={showMobileLegend}
+          aria-label={tr("legendPanel")}
+          onclick={openLegend}
+        >
+          <span
+            class="flex h-3 w-4 overflow-hidden rounded-sm"
+            aria-hidden="true"
+          >
+            {#each classes as item}
+              <span class="flex-1" style={`background:${item.c}`}></span>
+            {/each}
+          </span>
+
+          {tr("legendButton")}
+        </button>
+
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-full border border-white/15
+                 bg-[#101821]/95 px-3 py-2 text-[11px] font-medium text-slate-100
+                 shadow-lg backdrop-blur transition-transform active:scale-[0.97]"
+          aria-haspopup="dialog"
+          aria-expanded={showInfoSheet}
+          aria-label={tr("infoPanel")}
+          onclick={() => (showInfoSheet = true)}
+        >
+          <span aria-hidden="true">ⓘ</span>
+
+          {tr("infoButton")}
+        </button>
       </div>
+
+      <!-- Suggeriment per invitar a clicar el mapa. -->
+      {#if geoError}
+        <div
+          class="pointer-events-none absolute top-3 left-1/2 z-10 max-w-[85%]
+                 -translate-x-1/2 rounded-lg border border-amber-400/25 bg-[#101821]/95
+                 px-3 py-1.5 text-center text-[11px] text-amber-200 shadow-lg backdrop-blur"
+          role="status"
+        >
+          {tr(geoError)}
+        </div>
+      {:else if !selectedPoint && !initialMapLoading}
+        <div
+          class="pointer-events-none absolute top-3 left-1/2 z-10
+                 -translate-x-1/2 rounded-full border border-white/10
+                 bg-[#101821]/90 px-3 py-1.5 text-[11px] text-slate-300 shadow-lg backdrop-blur"
+        >
+          {tr("clickMap")}
+        </div>
+      {/if}
+
+      <!-- Data i hora del fotograma actual. A mòbil no cal: el panell
+           temporal de dalt ja la mostra i es sobreposava amb els botons. -->
+      <div
+        class="pointer-events-none absolute bottom-4 left-1/2 z-10 hidden
+         -translate-x-1/2 rounded-xl border border-white/10
+         bg-[#101821]/95 px-4 py-2 shadow-lg backdrop-blur xl:flex"
+      >
+        <div class="flex items-center gap-3">
+          <div class="text-left">
+            <p
+              class="whitespace-nowrap text-[10px] uppercase tracking-[0.18em] text-slate-500"
+            >
+              {badgeWeekday} {badgeDate}
+            </p>
+            <p class="mt-0.5 text-lg font-semibold leading-none text-teal-200">
+              {badgeTime}
+            </p>
+          </div>
+
+          {#if badgeRelative}
+            <span
+              class="rounded-full bg-teal-300/10 px-2 py-0.5 text-[10px] font-medium text-teal-200"
+            >
+              {badgeRelative}
+            </span>
+          {/if}
+        </div>
+      </div>
+
+      <!-- Informació del punt: targeta flotant a l'escriptori, full al mòbil. -->
+      <PointPanel
+        open={!!selectedPoint}
+        point={selectedPoint}
+        municipality={selectedMunicipality}
+        {loadingMunicipality}
+        {municipalityError}
+        value={selectedValue}
+        series={pointSeries}
+        selectedHour={Number(selectedHour)}
+        {loadingSeries}
+        {language}
+        closeLabel={tr("close")}
+        onClose={closePointPanel}
+        onSelectHour={(index) => (selectedHour = index)}
+      />
     </section>
 
-    <aside
-      class="flex min-h-0 min-w-0 flex-col gap-4 border-t border-white/10 bg-[#101821] p-3 xl:overflow-y-auto xl:border-l xl:border-t-0 xl:p-4"
-    >
-      <section>
-        {#if selectedPoint}
-          <div class="mb-2 rounded-xl border border-white/10 bg-[#0b1118] p-3">
-            <p class="text-[10px] uppercase tracking-widest text-slate-500">
-              {tr("municipality")}
-            </p>
-
-            {#if loadingMunicipality}
-              <p class="mt-1 text-sm text-slate-400">
-                {tr("queryingMunicipality")}
-              </p>
-            {:else if selectedMunicipality}
-              <p class="mt-1 text-sm font-semibold text-teal-200">
-                {selectedMunicipality}
-              </p>
-            {:else if municipalityError}
-              <p class="mt-1 text-xs text-amber-300">
-                {tr(municipalityError)}
-              </p>
-            {:else}
-              <p class="mt-1 text-sm text-slate-400">—</p>
-            {/if}
-          </div>
-          <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <p class="text-[10px] text-slate-500">{tr("latitude")}</p>
-                <p class="mt-1 font-mono text-xs">
-                  {selectedPoint.lat.toFixed(5)}°
-                </p>
-              </div>
-              <div>
-                <p class="text-[10px] text-slate-500">{tr("longitude")}</p>
-                <p class="mt-1 font-mono text-xs">
-                  {selectedPoint.lng.toFixed(5)}°
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div class="mt-2 rounded-xl border border-white/10 bg-[#0b1118] p-3">
-            <p class="text-[10px] uppercase tracking-widest text-slate-500">
-              {tr("utciValue")}
-            </p>
-            <p
-              class="mt-1 text-2xl font-semibold"
-              style={`color: ${selectedValue?.color ?? "#94a3b8"}`}
-            >
-              {selectedValue ? `${selectedValue.value.toFixed(1)} °C` : "—"}
-            </p>
-            <p class="mt-1 text-xs text-slate-400">
-              {selectedValue?.label ?? tr("noRasterValue")}
-            </p>
-          </div>
-        {:else}
-          <div
-            class="rounded-xl border border-dashed border-white/10 p-5 text-center"
-          >
-            <p class="text-sm text-slate-300">{tr("noPoint")}</p>
-            <p class="mt-1 text-xs text-slate-500">
-              {tr("clickMap")}
-            </p>
-          </div>
-        {/if}
-      </section>
-
-      <!--  <div class="h-px bg-white/10"></div> -->
-      {#if Number(selectedHour) === 0}
-        <section>
-          <div class="mb-2 flex items-center justify-between">
-            <h2
-              class="text-[11px] font-semibold uppercase tracking-widest text-slate-400"
-            >
-              {tr("utciEvolution")}
-            </h2>
-            {#if loadingSeries}
-              <span class="text-[10px] text-amber-300">{tr("calculating")}</span
-              >
-            {/if}
-          </div>
-
-          {#if !selectedPoint}
-            <div
-              class="rounded-xl border border-dashed border-white/10 p-4 text-center"
-            >
-              <p class="text-xs text-slate-400">
-                {tr("selectPoint")}
-              </p>
-            </div>
-          {:else if chartSeries.length}
-            <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
-              <p class="mb-2 text-[10px] text-slate-500">
-                {tr("localHour")}
-              </p>
-
-              <svg
-                viewBox="0 0 300 148"
-                class="w-full"
-                role="img"
-                aria-label={tr("next24Hours")}
-              >
-                {#each chartRange.ticks as tick}
-                  <line
-                    x1="36"
-                    y1={chartY(tick)}
-                    x2="286"
-                    y2={chartY(tick)}
-                    stroke="#64748b"
-                    stroke-opacity="0.22"
-                    stroke-dasharray="3 3"
-                  />
-                  <text
-                    x="36"
-                    y={chartY(tick) + 4}
-                    fill="#94a3b8"
-                    font-size="11"
-                    text-anchor="end">{tick}°</text
-                  >
-                {/each}
-
-                {#each chartLineSegments() as segment}
-                  <polyline
-                    points={segment}
-                    fill="none"
-                    stroke="#cbd5e1"
-                    stroke-width="2.5"
-                    stroke-linejoin="round"
-                    stroke-linecap="round"
-                  />
-                {/each}
-
-                {#each chartSeries as p, i}
-                  {#if Number.isFinite(p.value)}
-                    <circle
-                      cx={chartX(i)}
-                      cy={chartY(p.value)}
-                      r={i === 0 ? 4.5 : 3}
-                      fill={p.color}
-                      stroke={i === 0 ? "#ffffff" : "#0b1118"}
-                      stroke-width={i === 0 ? 1.5 : 0.7}
-                    >
-                      <title>{`${p.label}: ${p.value.toFixed(1)} °C`}</title>
-                    </circle>
-                  {/if}
-                {/each}
-
-                {#each [0, Math.floor((chartSeries.length - 1) / 2), chartSeries.length - 1] as i}
-                  {#if chartSeries[i]}
-                    <text
-                      x={chartX(i)}
-                      y="140"
-                      fill="#94a3b8"
-                      font-size="9"
-                      text-anchor={i === 0
-                        ? "start"
-                        : i === chartSeries.length - 1
-                          ? "end"
-                          : "middle"}>{chartSeries[i].label}</text
-                    >
-                  {/if}
-                {/each}
-              </svg>
-
-              <p class="mt-2 text-[10px] text-slate-500">
-                {tr("eachPoint")}
-              </p>
-            </div>
-          {:else}
-            <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
-              <p class="text-xs text-slate-400">
-                {loadingSeries ? tr("preparingSeries") : tr("noDataPoint")}
-              </p>
-            </div>
-          {/if}
-        </section>
-
-        <div class="h-px bg-white/10"></div>
-      {/if}
-      <div class="h-px bg-white/10"></div>
-
-      <section class="pb-2">
-        <h2
-          class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
-        >
-          {tr("factorsTitle")}
-        </h2>
-
-        <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
-          <p class="text-xs leading-relaxed text-slate-300">
-            {tr("factorsIntro")}
-          </p>
-
-          <div class="mt-3 space-y-3">
-            <div class="flex items-start gap-3">
-              <div
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-400/10 text-orange-300"
-              >
-                <span aria-hidden="true">🌡</span>
-              </div>
-              <div>
-                <p class="text-xs font-medium text-slate-200">
-                  {tr("airTemperature")}
-                </p>
-                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  {tr("airTemperatureText")}
-                </p>
-              </div>
-            </div>
-
-            <div class="flex items-start gap-3">
-              <div
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-400/10 text-sky-300"
-              >
-                <span aria-hidden="true">💧</span>
-              </div>
-              <div>
-                <p class="text-xs font-medium text-slate-200">
-                  {tr("humidity")}
-                </p>
-                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  {tr("humidityText")}
-                </p>
-              </div>
-            </div>
-
-            <div class="flex items-start gap-3">
-              <div
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-300"
-              >
-                <span aria-hidden="true">〰</span>
-              </div>
-              <div>
-                <p class="text-xs font-medium text-slate-200">{tr("wind")}</p>
-                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  {tr("windText")}
-                </p>
-              </div>
-            </div>
-
-            <div class="flex items-start gap-3">
-              <div
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-yellow-400/10 text-yellow-300"
-              >
-                <span aria-hidden="true">☀</span>
-              </div>
-              <div>
-                <p class="text-xs font-medium text-slate-200">
-                  {tr("radiation")}
-                </p>
-                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  {tr("radiationText")}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div
-            class="mt-4 rounded-lg border border-teal-300/10 bg-teal-300/5 p-3"
-          >
-            <p class="text-xs font-medium text-teal-200">
-              {tr("utciMeaning")}
-            </p>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-300">
-              {tr("utciMeaningText")}
-            </p>
-          </div>
-
-          <p class="mt-3 text-[10px] leading-relaxed text-slate-500">
-            {tr("referenceIndex")}
-          </p>
-        </div>
-      </section>
-    </aside>
   </main>
+
+  <!-- Full de la llegenda per a pantalles petites. -->
+  <Sheet
+    bind:open={showMobileLegend}
+    title={displayMode === "utci" ? tr("utciLegend") : tr("stressCategories")}
+    closeLabel={tr("close")}
+    onClose={closeLegend}
+  >
+    <Legend {classes} {language} {displayMode} />
+  </Sheet>
+
+  <!-- Full d'informació per a pantalles petites. -->
+  <Sheet
+    bind:open={showInfoSheet}
+    title={tr("infoPanel")}
+    closeLabel={tr("close")}
+    onClose={() => (showInfoSheet = false)}
+  >
+    <InfoPanel {language} />
+  </Sheet>
 </div>
 
 <style>
@@ -1705,31 +1483,74 @@
     }
   }
 
-  .time-slider {
-    appearance: none;
-    -webkit-appearance: none;
-    height: 5px;
+  /* Acordió de la secció informativa: l'alçada s'anima amb
+     grid-template-rows, que no necessita conèixer la mida del contingut. */
+  .info-grid {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 220ms var(--ease-in-out);
+  }
+
+  .info-grid.is-open {
+    grid-template-rows: 1fr;
+  }
+
+  .info-grid > div {
+    overflow: hidden;
+  }
+
+  /* Punt seleccionat: un marker HTML permet la pols en CSS sense
+     obligar el mapa a redibuixar-se en cada fotograma. */
+  :global(.selected-marker) {
+    position: relative;
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    pointer-events: none;
+  }
+
+  :global(.selected-marker__dot) {
+    width: 12px;
+    height: 12px;
+    border: 2px solid #ffffff;
     border-radius: 999px;
-    background: #344250;
-    accent-color: #67d9c1;
+    background: #ef4444;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 35%),
+      0 2px 6px rgb(0 0 0 / 45%);
   }
 
-  .time-slider::-webkit-slider-thumb {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    background: #67d9c1;
-    border: 3px solid #17332f;
+  :global(.selected-marker__pulse) {
+    position: absolute;
+    inset: 0;
+    border: 2px solid rgb(239 68 68 / 70%);
+    border-radius: 999px;
+    animation: marker-pulse 2.4s ease-out infinite;
   }
 
-  .time-slider::-moz-range-thumb {
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    background: #67d9c1;
-    border: 2px solid #17332f;
+  @keyframes marker-pulse {
+    0% {
+      transform: scale(0.6);
+      opacity: 0.9;
+    }
+
+    70%,
+    100% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.selected-marker__pulse) {
+      animation: none;
+      opacity: 0.4;
+    }
+
+    .info-grid {
+      transition: none;
+    }
   }
 
   :global(.maplibregl-ctrl-group) {
@@ -1745,6 +1566,24 @@
 
   :global(.maplibregl-ctrl-group button span) {
     filter: invert(1);
+  }
+
+  /* El control de geolocalització va fora d'un ctrl-group: l'alignem
+     amb el tema fosc dels altres controls. */
+  :global(.maplibregl-ctrl-geolocate) {
+    width: 30px !important;
+    height: 30px !important;
+    border: 1px solid rgb(255 255 255 / 12%) !important;
+    border-radius: 10px !important;
+    background: #101821 !important;
+  }
+
+  :global(.maplibregl-ctrl-geolocate span) {
+    filter: invert(1);
+  }
+
+  :global(.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-active) {
+    background: #101821 !important;
   }
 
   :global(.maplibregl-ctrl-attrib) {
