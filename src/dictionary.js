@@ -85,7 +85,8 @@ export const translations = {
         geolocationUnavailable: "Ubicació no disponible",
         geolocationError: "No s’ha pogut obtenir la teva ubicació. Revisa els permisos del navegador.",
         zoomIn: "Aproxima",
-        zoomOut: "Allunya"
+        zoomOut: "Allunya",
+        resizePanel: "Redimensiona el panell"
     },
 
     en: {
@@ -172,7 +173,8 @@ export const translations = {
         geolocationUnavailable: "Location not available",
         geolocationError: "Could not get your location. Check the browser permissions.",
         zoomIn: "Zoom in",
-        zoomOut: "Zoom out"
+        zoomOut: "Zoom out",
+        resizePanel: "Resize panel"
     }
 };
 

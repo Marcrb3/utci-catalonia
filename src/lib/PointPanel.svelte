@@ -1,6 +1,7 @@
 <script>
   import { translate } from "../dictionary.js";
   import Chart from "./Chart.svelte";
+  import { verticalResize } from "./resize.js";
 
   // Informació del punt seleccionat: municipi, coordenades, valor UTCI
   // i l'evolució temporal de tot el període de previsió.
@@ -16,9 +17,70 @@
     loadingSeries = false,
     language = "ca",
     closeLabel = "Close",
+    resizeLabel = "Resize panel",
     onClose = () => {},
     onSelectHour = () => {},
   } = $props();
+
+  const MIN_HEIGHT = 200;
+
+  let panelElement = $state(null);
+  let sheetHeight = $state(null);
+  let currentHeight = $state(0);
+  let expanded = $state(false);
+  let dragged = false;
+  let startHeight = 0;
+
+  function maxHeight() {
+    if (typeof window === "undefined") return 800;
+
+    return Math.round(window.innerHeight * 0.88);
+  }
+
+  function setHeight(value) {
+    sheetHeight = Math.max(MIN_HEIGHT, Math.min(maxHeight(), value));
+    currentHeight = sheetHeight;
+  }
+
+  const dragOptions = {
+    onStart: () => {
+      dragged = false;
+      startHeight = panelElement?.getBoundingClientRect().height ?? 0;
+      currentHeight = startHeight;
+    },
+    onDelta: (delta) => {
+      if (!startHeight) return;
+
+      if (Math.abs(delta) > 4) dragged = true;
+
+      setHeight(startHeight + delta);
+    },
+  };
+
+  // Un toc al tirador desplega o recull el panell.
+  function toggleExpanded() {
+    if (dragged) {
+      dragged = false;
+      return;
+    }
+
+    if (expanded) {
+      expanded = false;
+      sheetHeight = null;
+      return;
+    }
+
+    expanded = true;
+    setHeight(maxHeight());
+  }
+
+  // En obrir el panell es torna a l'alçada natural.
+  $effect(() => {
+    if (open) {
+      sheetHeight = null;
+      expanded = false;
+    }
+  });
 </script>
 
 <button
@@ -31,18 +93,28 @@
 ></button>
 
 <div
+  bind:this={panelElement}
   class="point-panel"
   class:is-open={open}
   inert={!open}
+  style={sheetHeight ? `--sheet-height:${sheetHeight}px` : ""}
   role="dialog"
   aria-modal="true"
   aria-label={translate("pointPanel", language)}
 >
-  <div class="flex justify-center pt-2 xl:hidden">
-    <span class="h-1 w-10 rounded-full bg-white/20"></span>
-  </div>
+  <!-- Maneta: arrossegar per ampliar o reduir el panell. -->
+  <button
+    type="button"
+    class="flex w-full shrink-0 cursor-grab touch-none justify-center py-2.5 active:cursor-grabbing xl:hidden"
+    aria-label={resizeLabel}
+    aria-expanded={expanded}
+    onclick={toggleExpanded}
+    use:verticalResize={dragOptions}
+  >
+    <span class="h-1 w-10 rounded-full bg-white/25"></span>
+  </button>
 
-  <div class="flex items-start justify-between gap-3 px-4 pt-3">
+  <div class="flex items-start justify-between gap-3 px-4 pt-1">
     <div class="min-w-0">
       <p class="text-[10px] uppercase tracking-widest text-slate-500">
         {translate("municipality", language)}
@@ -152,7 +224,8 @@
     position: fixed;
     inset: auto 0 0 0;
     z-index: 50;
-    max-height: 78dvh;
+    height: var(--sheet-height, auto);
+    max-height: 88dvh;
     overflow-y: auto;
     border-top: 1px solid rgb(255 255 255 / 0.15);
     border-radius: 1rem 1rem 0 0;
@@ -180,6 +253,7 @@
       position: absolute;
       inset: 5rem 0.75rem 2rem auto;
       width: 340px;
+      height: auto;
       max-height: none;
       border: 1px solid rgb(255 255 255 / 0.1);
       border-radius: 0.75rem;

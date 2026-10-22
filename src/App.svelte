@@ -1415,6 +1415,7 @@
         {loadingSeries}
         {language}
         closeLabel={tr("close")}
+        resizeLabel={tr("resizePanel")}
         onClose={closePointPanel}
         onSelectHour={(index) => (selectedHour = index)}
       />
@@ -1427,6 +1428,7 @@
     bind:open={showMobileLegend}
     title={displayMode === "utci" ? tr("utciLegend") : tr("stressCategories")}
     closeLabel={tr("close")}
+    resizeLabel={tr("resizePanel")}
     onClose={closeLegend}
   >
     <Legend {classes} {language} {displayMode} />
@@ -1437,6 +1439,7 @@
     bind:open={showInfoSheet}
     title={tr("infoPanel")}
     closeLabel={tr("close")}
+    resizeLabel={tr("resizePanel")}
     onClose={() => (showInfoSheet = false)}
   >
     <InfoPanel {language} />
