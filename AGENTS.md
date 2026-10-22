@@ -143,8 +143,14 @@ Cap dels dos forma part de `npm run build` i no s'executen automàticament.
 - `public/manifest.webmanifest` — manifest de l'aplicació. **Totes les rutes són relatives** (`start_url: "."`, `scope: "."`, icones sense `base`): si no, es trenquen en el subdirectori de GitHub Pages.
 - `build/service-worker.js` — plantilla del service worker. El plugin de `vite.config.js` hi injecta la llista de recursos compilats i la versió (hash dels noms), i genera `dist/sw.js`. **No escriguis el `sw.js` a mà**: el fitxer de `dist/` es regenera a cada build.
 - El service worker es registra a `src/main.js` **només en producció**: en desenvolupament interfereix amb el recàrrega en calent de Vite.
-- Els icones PNG es generen amb `node tools/generate-icons.mjs` a partir de `public/favicon.svg` (requereix Chrome; els PNG ja estan versionats, així que la compilació no en depèn).
+- Els icones PNG es generen amb `node tools/generate-icons.mjs` a partir de `public/favicon.svg` (requereix Chrome; els PNG ja estan versionats, així que la compilació no en depèn). L'eina genera tres variants: quadrada (fons opac ple), *maskable* (el dibuix escalat al 72 % a la zona segura) i `apple-touch-icon`.
 - **No es posen a la memòria cau els recursos de tercers** (estil base de l'ICGC, relleu, API): no es redistribueixen dades d'altres. Els ràsters `.tif` sí (són immutables) i se'n conserven els 12 darrers.
+
+## iOS: àrees segures
+
+- `index.html` fa servir `apple-mobile-web-app-status-bar-style: default`. **No ho canvïs a `black-translucent`**: la web view s'estendria sota la barra d'estat i la capçalera quedaria tallada.
+- Amb `viewport-fit=cover`, el contenidor arrel (`.app-shell`, a `App.svelte`) aplica `padding-top: env(safe-area-inset-top)` i `padding-bottom: env(safe-area-inset-bottom)`. El `box-sizing: border-box` global fa que el padding vagi dins de l'alçada `100dvh` i no hi hagi desbordament.
+- `pwa-check.mjs` ho comprova simulant les àrees segures de l'iPhone (notch 47 px + indicador 34 px).
 
 ## Rutes base (no les canviis)
 

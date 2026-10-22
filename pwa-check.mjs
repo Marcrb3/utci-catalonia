@@ -225,6 +225,53 @@ await send("Network.emulateNetworkConditions", {
   uploadThroughput: -1,
 });
 
+// ---------- Maquetació en mòbil (iPhone) ----------
+await send("Emulation.setDeviceMetricsOverride", {
+  width: 393,
+  height: 852,
+  deviceScaleFactor: 3,
+  mobile: true,
+});
+await send("Page.navigate", { url: APP });
+await sleep(4000);
+
+check(
+  "mobil: l'app omple la finestra",
+  await evaluate(`
+    (() => {
+      const shell = document.querySelector(".app-shell");
+      return Math.round(shell.getBoundingClientRect().height) + "/" + window.innerHeight;
+    })()
+  `),
+);
+
+// Simula les arees segures de l'iPhone (notch + indicador d'inici).
+await evaluate(`
+  (() => {
+    const style = document.createElement("style");
+    style.textContent = ".app-shell{padding-top:47px !important;padding-bottom:34px !important}";
+    document.head.appendChild(style);
+  })()
+`);
+await sleep(500);
+
+check(
+  "mobil: amb arees segures la capcalera baixa del notch i no hi ha desbordament",
+  await evaluate(`
+    (() => {
+      const shell = document.querySelector(".app-shell");
+      const header = document.querySelector("header");
+      const s = shell.getBoundingClientRect();
+      const h = header.getBoundingClientRect();
+      return {
+        capcalera_top: Math.round(h.top),
+        desbordament: Math.round(s.height - window.innerHeight),
+        scroll: document.documentElement.scrollHeight - window.innerHeight,
+      };
+    })()
+  `),
+);
+
 console.log("\n=== RESULTATS PWA ===");
 for (const [label, value] of results) {
   console.log(`- ${label}: ${JSON.stringify(value)}`);

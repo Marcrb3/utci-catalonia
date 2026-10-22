@@ -1155,7 +1155,7 @@
 </svelte:head>
 
 <div
-  class="flex h-dvh min-h-0 flex-col overflow-hidden bg-[#0b1118] text-slate-100"
+  class="app-shell flex h-dvh min-h-0 flex-col overflow-hidden bg-[#0b1118] text-slate-100"
 >
   <header
     class="z-10 flex h-[62px] shrink-0 items-center justify-between border-b border-white/10 bg-[#101821] px-4 sm:px-6"
@@ -1462,6 +1462,14 @@
 
   :global(*) {
     box-sizing: border-box;
+  }
+
+  /* Àrees segures de l'iPhone (notch i indicador d'inici): el contingut
+     no ha de quedar sota la barra d'estat ni darrere de l'indicador.
+     Amb `viewport-fit=cover` el navegador informa dels marges reals. */
+  .app-shell {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .utci-spinner {

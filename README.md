@@ -194,6 +194,23 @@ L’aplicació és instal·lable i funciona sense connexió.
 - El registre només es fa en producció (`import.meta.env.PROD`), per no interferir amb el recàrrega en calent de Vite.
 - La versió de la memòria cau és un hash dels noms de fitxer: en publicar una versió nova, la memòria cau antiga s'esborra sola.
 
+### Ícons
+
+Els icones es generen a partir de `public/favicon.svg` amb `node tools/generate-icons.mjs` (requereix Chrome):
+
+| Fitxer | Ús | Notes |
+|---|---|---|
+| `icon-192.png`, `icon-512.png` | icones «any» | fons opac que ocupa tot el llenç |
+| `icon-maskable-512.png` | icona «maskable» (Android) | el dibuix va escalat al 72 % i centrat a la **zona segura**; el sistema el pot retallar sense tallar el termòmetre |
+| `apple-touch-icon.png` | iOS | quadrat opac: iOS aplica la seva pròpia màscara arrodonida |
+
+### iOS i les àrees segures
+
+En mode standalone a l'iPhone, la web view pot quedar sota el notch o darrere de l'indicador d'inici. Per això:
+
+- `viewport-fit=cover` fa que el navegador informi dels marges reals, i `.app-shell` (el contenidor raíz) aplica `padding-top: env(safe-area-inset-top)` i `padding-bottom: env(safe-area-inset-bottom)`.
+- La barra d'estat del sistema s'ha de deixar en modo **`default`** (no `black-translucent`): així la web view comença **sota** la barra d'estat i la capçalera de l'app no queda tallada.
+
 Per instal·lar-la: obre el visor al navegador → menú del navegador → «Instal·la l’aplicació» (o «Afegeix a la pantalla d’inici» a iOS).
 
 Si canvies el logotip, torna a generar els icones amb:

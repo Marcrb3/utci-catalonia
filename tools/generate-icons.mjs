@@ -81,25 +81,57 @@ function send(method, params = {}) {
 }
 
 const svg = fs.readFileSync(path.join(PUBLIC, "favicon.svg"), "utf8");
-const encoded = Buffer.from(svg).toString("base64");
+
+// El favicon porta les cantonades arrodonides i el fons no arriba fins
+// al marge. Per a la PWA calen dues variants:
+//
+//   · "quadrada": fons opac que ocupa tot el llenç (iOS i Android
+//     apliquen la seva pròpia màscara, així que les cantonades
+//     arrodonides es veurien com a transparents).
+//   · "maskable": el fons ocupa tot el llenç i només el dibuix
+//     (termòmetre i sol) s'escala a la zona segura central, perquè el
+//     sistema el pugui retallar sense tallar el dibuix.
+function variant({ square = false, contentScale = 1 } = {}) {
+  let out = svg.replace(/rx="\d+"/, square ? 'rx="0"' : 'rx="13"');
+
+  if (contentScale === 1) return out;
+
+  // S'envolven el termòmetre i el sol (els elements de color ambre) amb
+  // una transformació que els centra i els redimensiona.
+  const transform = `<g transform="translate(32 32) scale(${contentScale}) translate(-32 -32)">`;
+
+  out = out.replace(
+    /(<g fill="none" stroke="#ffbd2e"[\s\S]*?<\/g>\s*<circle[^>]*\/>)/,
+    (match) => `${transform}${match}</g>`,
+  );
+
+  return out;
+}
+
+const encoded = {
+  square: Buffer.from(variant({ square: true })).toString("base64"),
+  maskable: Buffer.from(variant({ square: true, contentScale: 0.72 })).toString(
+    "base64",
+  ),
+};
 
 // Els icones amb "maskable" deixen una zona segura: el contingut va
-// escalat al 60 % i centrat sobre el fons, perquè el sistema pugui
-// retallar elslaterals sense tallar el dibuix.
+// escalat i centrat sobre el fons, perquè el sistema pugui
+// retallar els laterals sense tallar el dibuix.
 const targets = [
-  { file: "icon-192.png", size: 192, scale: 1 },
-  { file: "icon-512.png", size: 512, scale: 1 },
-  { file: "icon-maskable-512.png", size: 512, scale: 0.6 },
-  { file: "apple-touch-icon.png", size: 180, scale: 1 },
+  { file: "icon-192.png", size: 192, source: "square" },
+  { file: "icon-512.png", size: 512, source: "square" },
+  { file: "icon-maskable-512.png", size: 512, source: "maskable" },
+  { file: "apple-touch-icon.png", size: 180, source: "square" },
 ];
 
 await send("Page.enable");
 
-for (const { file, size, scale } of targets) {
+for (const { file, size, source } of targets) {
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     html,body{margin:0;padding:0;width:${size}px;height:${size}px;overflow:hidden;background:#063d3b}
-    img{position:absolute;inset:0;width:100%;height:100%;transform:scale(${scale});transform-origin:center}
-  </style></head><body><img src="data:image/svg+xml;base64,${encoded}"></body></html>`;
+    img{position:absolute;inset:0;width:100%;height:100%}
+  </style></head><body><img src="data:image/svg+xml;base64,${encoded[source]}"></body></html>`;
 
   await send("Emulation.setDeviceMetricsOverride", {
     width: size,
