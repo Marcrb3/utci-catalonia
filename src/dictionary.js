@@ -24,7 +24,6 @@ export const translations = {
         latitude: "Latitud",
         longitude: "Longitud",
         utciValue: "Valor UTCI",
-        noRasterValue: "Sense valor al ràster en aquest punt",
         clickMap: "Fes clic al mapa per consultar el valor UTCI.",
         calculating: "Calculant…",
         noDataPoint: "No hi ha dades disponibles per a aquest punt.",
@@ -40,7 +39,6 @@ export const translations = {
         utciMeaning: "I què ens indica l'UTCI?",
         utciMeaningText: "Resumeix l'efecte conjunt d'aquestes condicions en una temperatura equivalent, expressada en °C. No és necessàriament la temperatura que marca un termòmetre: dues situacions amb la mateixa temperatura de l'aire poden produir un estrès tèrmic molt diferent.",
         referenceIndex: "L'UTCI és un índex de referència. L'experiència individual també depèn de l'activitat física, la roba, l'aclimatació i altres factors personals.",
-        municipalityNotFound: "No s'ha pogut identificar el municipi d'aquest punt.",
         municipalityError: "No s'ha pogut consultar el municipi.",
         extremeCold: "Fred extrem",
         veryStrongCold: "Fred molt fort",
@@ -86,7 +84,8 @@ export const translations = {
         geolocationError: "No s’ha pogut obtenir la teva ubicació. Revisa els permisos del navegador.",
         zoomIn: "Aproxima",
         zoomOut: "Allunya",
-        resizePanel: "Redimensiona el panell"
+        resizePanel: "Redimensiona el panell",
+        pointNoData: "No hi ha dades per a aquest punt."
     },
 
     en: {
@@ -112,7 +111,6 @@ export const translations = {
         latitude: "Latitude",
         longitude: "Longitude",
         utciValue: "UTCI value",
-        noRasterValue: "No raster value at this location",
         clickMap: "Click the map to inspect the UTCI value.",
         calculating: "Calculating…",
         noDataPoint: "No data available for this location.",
@@ -128,7 +126,6 @@ export const translations = {
         utciMeaning: "What does UTCI tell us?",
         utciMeaningText: "It summarises the combined effect of these conditions as an equivalent temperature in °C. This is not necessarily the temperature shown by a thermometer: two situations with the same air temperature can produce very different levels of thermal stress.",
         referenceIndex: "UTCI is a reference index. Individual experience also depends on physical activity, clothing, acclimatisation and other personal factors.",
-        municipalityNotFound: "Could not identify the municipality at this location.",
         municipalityError: "Could not look up the municipality.",
         extremeCold: "Extreme cold stress",
         veryStrongCold: "Very strong cold stress",
@@ -174,7 +171,8 @@ export const translations = {
         geolocationError: "Could not get your location. Check the browser permissions.",
         zoomIn: "Zoom in",
         zoomOut: "Zoom out",
-        resizePanel: "Resize panel"
+        resizePanel: "Resize panel",
+        pointNoData: "No data for this location."
     }
 };
 

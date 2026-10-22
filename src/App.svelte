@@ -686,6 +686,42 @@
     };
   }
 
+  // L'API Territorial pot retornar, en punts que no cauen a cap municipi,
+  // textos que no són noms (per exemple la marca de temps de la consulta:
+  // "2026-10-22T13:15:00.792601+02:00"). Només acceptem textos que
+  // semblin un nom de municipi real.
+  const NOT_A_MUNICIPALITY = new Set([
+    "FeatureCollection",
+    "Feature",
+    "MultiPolygon",
+    "Polygon",
+    "MultiPoint",
+    "Point",
+    "LineString",
+    "string",
+    "null",
+    "undefined",
+  ]);
+
+  function isPlausibleMunicipality(text) {
+    if (typeof text !== "string") return false;
+
+    const value = text.trim();
+
+    if (value.length < 2 || value.length > 80) return false;
+
+    // Dates i marques de temps.
+    if (/\d{4}-\d{2}-\d{2}/.test(value)) return false;
+
+    // Tipus de GeoJSON o altres valors tècnics.
+    if (NOT_A_MUNICIPALITY.has(value)) return false;
+
+    // Ha de contenir alguna lletra.
+    if (!/\p{L}/u.test(value)) return false;
+
+    return true;
+  }
+
   async function consultarMunicipi(point) {
     const id = ++municipalityRequestId;
 
@@ -704,6 +740,17 @@
       const response = await fetch(url);
 
       if (!response.ok) {
+        // Un 4xx significa que el punt no cau a cap municipi (fora del
+        // territori de l'API): no és un error, sinó que no hi ha dades.
+        if (response.status >= 400 && response.status < 500) {
+          if (id === municipalityRequestId) {
+            selectedMunicipality = "";
+            municipalityError = "pointNoData";
+          }
+
+          return;
+        }
+
         throw new Error(`Error de l'API (${response.status})`);
       }
 
@@ -713,39 +760,52 @@
       if (id !== municipalityRequestId) return;
 
       // Accepta els formats habituals de resposta GeoJSON/API.
-      const features = Array.isArray(data.features)
+      const features = Array.isArray(data?.features)
         ? data.features
         : Array.isArray(data)
           ? data
-          : data.feature
+          : data?.feature
             ? [data.feature]
             : [];
 
-      const feature = features[0] ?? data;
+      const feature = features[0];
+
+      // Sense cap feature no hi ha municipi: el punt cau fora del territori
+      // de l'API (no s'ha de llegir res de l'objecte arrel, que conté
+      // camps com "timeStamp" o "type" que no són noms de municipi).
+      if (!feature) {
+        if (id === municipalityRequestId) {
+          selectedMunicipality = "";
+          municipalityError = "pointNoData";
+        }
+
+        return;
+      }
 
       const properties = feature.properties ?? feature;
 
-      const nameKeys = ["NOMMUNI", "NOM", "name", "NAME"];
+      const nameKeys = ["NOMMUNI", "CAPMUNI", "NOM", "name", "NAME", "MUNICIPI"];
 
-      const nameKey = nameKeys.find(
-        (key) =>
-          typeof properties[key] === "string" &&
-          properties[key].trim().length > 0,
+      const nameKey = nameKeys.find((key) =>
+        isPlausibleMunicipality(properties[key]),
       );
 
       if (nameKey) {
         selectedMunicipality = properties[nameKey].trim();
       } else {
-        // Alguns serveis retornen directament les dades de la capa.
-        const textValues = Object.values(properties).filter(
-          (value) => typeof value === "string" && value.trim(),
+        // Alguns serveis retornen les dades de la capa amb altres noms de
+        // camp: agafem el primer text que sembli un nom de municipi.
+        const fallback = Object.values(properties).find((value) =>
+          isPlausibleMunicipality(value),
         );
 
-        selectedMunicipality = textValues[0] ?? "";
+        selectedMunicipality = fallback?.trim() ?? "";
       }
 
       if (!selectedMunicipality) {
-        municipalityError = "municipalityNotFound";
+        // Cap municipi vàlid: el punt probablement és fora de Catalunya o
+        // fora de la malla de dades.
+        municipalityError = "pointNoData";
       }
     } catch (error) {
       console.error("Error consultant el municipi:", error);
@@ -990,7 +1050,13 @@
       attributionControl: false,
     });
 
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    // Els controls de MapLibre van a la cantonada inferior dreta: el panell
+    // del punt (superior dreta) els tapava.
+    //
+    // A les cantonades inferiors MapLibre insereix cada control al
+    // principi del contenidor: l'ordre de les crides queda invertit i el
+    // primer que s'afegeix acaba a sota de tot. Per això s'afegeix
+    // l'atribució primera (ha de quedar a sota) i el zoom el darrer.
     const attribution = new maplibregl.AttributionControl({
       compact: true,
     });
@@ -1002,14 +1068,15 @@
     // Geolocalització: situa el mapa a la posició de l'usuari i obre el
     // panell de previsió per aquest punt.
     geolocateControl = new maplibregl.GeolocateControl({
-      position: "top-left",
       trackUserLocation: false,
       showUserLocation: false,
       showAccuracyCircle: true,
       positionOptions: { enableHighAccuracy: true, timeout: 10000 },
     });
 
-    map.addControl(geolocateControl);
+    map.addControl(geolocateControl, "bottom-right");
+
+    map.addControl(new maplibregl.NavigationControl(), "bottom-right");
 
     geolocateControl.on("geolocate", (event) => {
       geoError = "";

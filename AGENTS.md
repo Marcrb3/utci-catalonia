@@ -85,16 +85,24 @@ Ids de source/layer: `utci-raster-source`, `utci-raster-layer`, `utci-raster-pre
 - **Cross-fade**: hi ha una capa auxiliar (`utci-raster-prev-layer`) **per sobre** de la principal. `crossFadeRaster()` fa: la auxiliar carrega la imatge visible → es torna a mostrar → la principal rep la nova per sota → quan la font ha carregat (`waitForSourceData`, que espera l'event `data` amb límit de 400 ms) la auxiliar s'apaga amb `raster-opacity-transition`. La textura es puja de forma asíncrona: si no s'espera, es veu un fotograma vell parpellejant.
 - El punt seleccionat **ja no és una capa**: és un `maplibregl.Marker` HTML (`.selected-marker`) per poder fer la pols en CSS sense redibuixar el mapa.
 
+## API Territorial (municipi)
+
+- L'API (`https://api.icgc.cat/territorial/elements/municipis/<x>,<y>`, en **UTM 31N**) retorna un `FeatureCollection` amb `timeStamp` i `type` a l'objecte arrel. **Mai s'ha de llegir el nom del municipi de l'objecte arrel**: en punts sense municipi retornaria la marca de temps o el text «FeatureCollection».
+- El nom es llegeix **només de `features[0].properties`** (clau `NOMMUNI`, o `CAPMUNI`/`NOM`/`name` com a alternatives) i es valida amb `isPlausibleMunicipality()`: rebutja dates, marques de temps, valors sense lletres i els tipus de GeoJSON.
+- Si no hi ha cap feature, l'API respon **HTTP 4xx** o una col·lecció buida: en tots dos casos el punt no té dades i es mostra `pointNoData` («No hi ha dades per a aquest punt»), que es mostra també al bloc del valor d'UTCI.
+
 ## Controls del mapa i geolocalització
 
 - El zoom inicial depèn de l'amplada: `zoom 6.2` i centre `[1.95, 41.72]` per sota de 768 px (per veure Catalunya sencera), `zoom 7.5` i `[1.7, 41.7]` a partir d'aquí.
-- El control de geolocalització (`maplibregl.GeolocateControl`) va a la cantonada **superior esquerra** del mapa: a la dreta hi ha els controls de zoom i el panell del punt, i a sota l'atribució. En prémer el botó, l'event `geolocate` obre el panell del punt i `easeTo` centra la vista; l'event `error` mostra `geoError`.
+- El control de geolocalització (`maplibregl.GeolocateControl`) obre el panell del punt en prémer el botó (event `geolocate` + `easeTo`); l'event `error` mostra `geoError`.
 - Les etiquetes dels controls de MapLibre són en anglès per defecte: `updateControlLabels()` les tradueix i es crida en canviar l'idioma.
+- Els controls (zoom, geolocalització i atribució) són a la **cantonada inferior dreta** del mapa, perquè el panell del punt (superior dreta) no els tapi. A les cantonades inferiors MapLibre insereix cada control al **principi** del contenidor: l'ordre de les crides a `addControl` queda invertit, així que cal afegir l'atribució primer (perquè quedi a sota) i el zoom el darrer.
+- El `GeolocateControl` **ignora** l'opció `position` del constructor: la posició s'ha de passar a `map.addControl(control, "bottom-right")`.
 
 ## Layout
 
 - El panell esquerre a l'escriptori és `clamp(300px, 23vw, 390px)`: creix amb la pantalla sense fer-ne massa, i en pantalles petites no es fa estreit.
-- El panell dret ja no existeix com a columna: la informació del punt és un calaix flotant sobre el mapa (`PointPanel.svelte`).
+- El panell dret ja no existeix com a columna: la informació del punt és un **panell ancorat** a la cantonada superior dreta del mapa (`PointPanel.svelte`), amb alçada variable segons el contingut i l'estil del panell esquerre (recte, amb vora a l'esquerra). Els controls de MapLibre són a la cantonada inferior dreta, per sota del panell.
 - L'etiqueta de data sobre el mapa només apareix a partir de `xl`: a les pantalles petites el panell temporal de dalt ja la mostra i es sobreposava amb els botons de llegenda i info.
 
 ## i18n
@@ -143,7 +151,9 @@ Cap dels dos forma part de `npm run build` i no s'executen automàticament.
 - `public/manifest.webmanifest` — manifest de l'aplicació. **Totes les rutes són relatives** (`start_url: "."`, `scope: "."`, icones sense `base`): si no, es trenquen en el subdirectori de GitHub Pages.
 - `build/service-worker.js` — plantilla del service worker. El plugin de `vite.config.js` hi injecta la llista de recursos compilats i la versió (hash dels noms), i genera `dist/sw.js`. **No escriguis el `sw.js` a mà**: el fitxer de `dist/` es regenera a cada build.
 - El service worker es registra a `src/main.js` **només en producció**: en desenvolupament interfereix amb el recàrrega en calent de Vite.
-- Els icones PNG es generen amb `node tools/generate-icons.mjs` a partir de `public/favicon.svg` (requereix Chrome; els PNG ja estan versionats, així que la compilació no en depèn). L'eina genera tres variants: quadrada (fons opac ple), *maskable* (el dibuix escalat al 72 % a la zona segura) i `apple-touch-icon`.
+- `public/favicon.svg` **es construeix**, no es dibuixa a mà: `node tools/generate-favicon.mjs` calcula la geometria (els 8 raigs del sol, repartits regularment al voltant del disc). Si cal canviar colors o proporcions, edita les constants de la capeta del script i torna a executar-lo.
+- Els icones PNG es generen amb `node tools/generate-icons.mjs` a partir del SVG (requereix Chrome; els PNG ja estan versionats, així que la compilació no en depèn). L'eina genera tres variants: quadrada (fons opac ple), *maskable* (el dibuix escalat al 72 % a la zona segura) i `apple-touch-icon`.
+- `node tools/check-icons.mjs` verifica que els PNG no tenen el dibuix tallat i que el fons és opac.
 - **No es posen a la memòria cau els recursos de tercers** (estil base de l'ICGC, relleu, API): no es redistribueixen dades d'altres. Els ràsters `.tif` sí (són immutables) i se'n conserven els 12 darrers.
 
 ## iOS: àrees segures

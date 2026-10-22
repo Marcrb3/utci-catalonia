@@ -35,11 +35,12 @@ Aplicació web interactiva per visualitzar dades de l'índex **Universal Thermal
 
 ### Consulta de punts
 
-- En clicar el mapa s’obre un **panell flotant** (escriptori) o un **full inferior** (mòbil) amb:
+- En clicar el mapa s’obre un **panell ancorat** (escriptori: a la cantonada superior dreta del mapa, sota la navbar, amb alçada variable segons el contingut i l’estil del panell esquerre) o un **full inferior** (mòbil) amb:
   - el **municipi** (API Territorial de l’ICGC),
   - les **coordenades**,
   - el **valor d’UTCI** i la seva categoria d’estrès,
   - la **gràfica d’evolució** de tot el període de previsió.
+- **Punts sense dades**: si es clica fora de la malla de dades (mar, fora de Catalunya) o l’API no torna un municipi vàlid, el panell indica «No hi ha dades per a aquest punt» en lloc de mostrar text sense sentit.
 - **Gràfica de tota la previsió**: línia colorejada segons la classe UTCI de cada tram, àrea ombrada, separadors de dia i cursor al fotograma seleccionat. Es pot **clicar o recórrer amb el teclat** per canviar el fotograma.
 
 ### Altres
@@ -136,7 +137,9 @@ src/
 build/
   service-worker.js       plantilla del service worker (la genera Vite)
 tools/
+  generate-favicon.mjs    construeix public/favicon.svg (geometria calculada)
   generate-icons.mjs      genera els icones PNG a partir del favicon SVG
+  check-icons.mjs         verifica que els icones no tinguin el dibuix tallat
 ```
 
 `App.svelte` és Svelte 5 en **mode legacy**; els components de `src/lib/` usen runes. No es barregen els dos estilos en un mateix fitxer.
@@ -194,9 +197,11 @@ L’aplicació és instal·lable i funciona sense connexió.
 - El registre només es fa en producció (`import.meta.env.PROD`), per no interferir amb el recàrrega en calent de Vite.
 - La versió de la memòria cau és un hash dels noms de fitxer: en publicar una versió nova, la memòria cau antiga s'esborra sola.
 
-### Ícons
+### Favicon i icones
 
-Els icones es generen a partir de `public/favicon.svg` amb `node tools/generate-icons.mjs` (requereix Chrome):
+El favicon es **construeix** amb `node tools/generate-favicon.mjs`: la geometria (els 8 raigs del sol, repartits regularment al voltant del disc) es calcula, no es dibuixa a mà. Els paràmetres (radi del disc, longitud i gruix dels raigs, colors) són constants a la capeta del script.
+
+Després, els icones PNG es generen a partir del SVG amb `node tools/generate-icons.mjs` (requereix Chrome):
 
 | Fitxer | Ús | Notes |
 |---|---|---|
@@ -213,10 +218,12 @@ En mode standalone a l'iPhone, la web view pot quedar sota el notch o darrere de
 
 Per instal·lar-la: obre el visor al navegador → menú del navegador → «Instal·la l’aplicació» (o «Afegeix a la pantalla d’inici» a iOS).
 
-Si canvies el logotip, torna a generar els icones amb:
+Si canvies el logotip o els colors, regenera-ho tot:
 
 ```bash
-node tools/generate-icons.mjs
+node tools/generate-favicon.mjs   # construeix public/favicon.svg
+node tools/generate-icons.mjs     # genera els PNG a partir del SVG
+node tools/check-icons.mjs        # verifica que no hi hagi dibuix tallat
 ```
 
 ---

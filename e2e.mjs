@@ -357,6 +357,146 @@ check(
   `),
 );
 check(
+  "escriptori: els controls de MapLibre són a la cantonada inferior dreta",
+  await evaluate(`
+    (() => {
+      const corner = document.querySelector(".maplibregl-ctrl-bottom-right");
+      const map = document.querySelector(".maplibregl-canvas");
+      if (!corner || !map) return "falten elements";
+      const c = corner.getBoundingClientRect();
+      const m = map.getBoundingClientRect();
+      return {
+        marge_dret: Math.round(c.right - m.right),
+        marge_inferior: Math.round(m.bottom - c.bottom),
+        zoom: !!corner.querySelector(".maplibregl-ctrl-zoom-in"),
+        geolocalitzacio: !!corner.querySelector(".maplibregl-ctrl-geolocate"),
+        atribució: !!corner.querySelector(".maplibregl-ctrl-attrib"),
+      };
+    })()
+  `),
+);
+
+// Obre un punt i comprova que el panell no tapa els controls.
+await evaluate(`
+  (() => {
+    const map = document.querySelector(".maplibregl-canvas");
+    const rect = map.getBoundingClientRect();
+    map.dispatchEvent(new MouseEvent("click", {
+      bubbles: true, cancelable: true, button: 0, pointerId: 1, isPrimary: true,
+      clientX: rect.left + rect.width * 0.45,
+      clientY: rect.top + rect.height * 0.45,
+    }));
+  })()
+`);
+await sleep(2500);
+
+check(
+  "escriptori: punt valid → municipi coherent",
+  await evaluate(`
+    (() => {
+      const panel = document.querySelector('[role="dialog"][aria-label="Informació del punt"]');
+      if (!panel) return "cap panell";
+      const text = panel.textContent;
+      return {
+        sense_dades: text.includes("No hi ha dades per a aquest punt"),
+        marca_de_temps: /\\d{4}-\\d{2}-\\d{2}T/.test(text),
+        feature_collection: text.includes("FeatureCollection"),
+        te_mostra_un_valor: /\\d+[.,]\\d+ °C/.test(text),
+      };
+    })()
+  `),
+);
+
+check(
+  "escriptori: el boto de zoom es a la cantonada inferior dreta del mapa",
+  await evaluate(`
+    (() => {
+      const map = document.querySelector(".maplibregl-canvas");
+      const zoom = document.querySelector(".maplibregl-ctrl-zoom-in");
+      if (!map || !zoom) return "falten elements";
+      const m = map.getBoundingClientRect();
+      const z = zoom.getBoundingClientRect();
+      return {
+        marge_dret: Math.round(m.right - z.right),
+        marge_inferior: Math.round(m.bottom - z.bottom),
+        dins_del_mapa: z.bottom <= m.bottom + 1 && z.right <= m.right + 1,
+      };
+    })()
+  `),
+);
+
+check(
+  "escriptori: el panell és anclat a dalt a la dreta i s'adapta al contingut",
+  await evaluate(`
+    (() => {
+      const panel = document.querySelector('[role="dialog"][aria-label="Informació del punt"]');
+      const map = document.querySelector(".maplibregl-canvas");
+      if (!panel || !map) return "falten elements";
+      const p = panel.getBoundingClientRect();
+      const m = map.getBoundingClientRect();
+      return {
+        top_sota_navbar: Math.round(p.top - m.top),
+        enganxat_a_la_dreta: Math.round(m.right - p.right),
+        alçada: Math.round(p.height),
+        alçada_del_mapa: Math.round(m.height),
+        alçada_variable: p.height < m.height - 100,
+      };
+    })()
+  `),
+);
+
+check(
+  "escriptori: el panell del punt no tapa els controls",
+  await evaluate(`
+    (() => {
+      const panel = document.querySelector('[role="dialog"][aria-label="Informació del punt"]');
+      const corner = document.querySelector(".maplibregl-ctrl-bottom-right");
+      if (!panel || !corner) return "falten elements";
+      const p = panel.getBoundingClientRect();
+      const c = corner.getBoundingClientRect();
+      const solap =
+        !(p.right <= c.left || p.left >= c.right || p.bottom <= c.top || p.top >= c.bottom);
+      return {
+        panell: Math.round(p.left) + "-" + Math.round(p.right),
+        controls: Math.round(c.left) + "-" + Math.round(c.right),
+        solap,
+      };
+    })()
+  `),
+);
+
+// Clic fora de la malla de dades (capçalera superior esquerra del mapa,
+// que cau al mar o a França).
+await evaluate(`
+  (() => {
+    const map = document.querySelector(".maplibregl-canvas");
+    const rect = map.getBoundingClientRect();
+    map.dispatchEvent(new MouseEvent("click", {
+      bubbles: true, cancelable: true, button: 0, pointerId: 1, isPrimary: true,
+      clientX: rect.left + rect.width * 0.07,
+      clientY: rect.top + rect.height * 0.07,
+    }));
+  })()
+`);
+await sleep(3000);
+
+check(
+  "escriptori: punt fora de la malla → missatge de sense dades",
+  await evaluate(`
+    (() => {
+      const panel = document.querySelector('[role="dialog"][aria-label="Informació del punt"]');
+      if (!panel) return "cap panell";
+      const text = panel.textContent.replace(/\\s+/g, " ").trim();
+      return {
+        te_mostra_municipi: text.slice(0, 120),
+        avisa_de_sense_dades: text.includes("No hi ha dades per a aquest punt"),
+        marca_de_temps: /\\d{4}-\\d{2}-\\d{2}T/.test(text),
+      };
+    })()
+  `),
+);
+
+check(
   "escriptori: la línia de temps és la versió llarga?",
   await evaluate(`
     (() => {
@@ -368,7 +508,9 @@ check(
 
 console.log("\n=== RESULTATS ===");
 for (const [label, value] of results) {
-  console.log(`- ${label}: ${value}`);
+  const shown =
+    value && typeof value === "object" ? JSON.stringify(value) : String(value);
+  console.log(`- ${label}: ${shown}`);
 }
 
 console.log("\n=== ERRORS DE CONSOLA ===");

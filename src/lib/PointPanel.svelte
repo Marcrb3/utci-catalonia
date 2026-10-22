@@ -114,7 +114,7 @@
     <span class="h-1 w-10 rounded-full bg-white/25"></span>
   </button>
 
-  <div class="flex items-start justify-between gap-3 px-4 pt-1">
+  <div class="flex items-start justify-between gap-3 px-4 pt-3 xl:pt-4">
     <div class="min-w-0">
       <p class="text-[10px] uppercase tracking-widest text-slate-500">
         {translate("municipality", language)}
@@ -156,16 +156,24 @@
               {translate("utciValue", language)}
             </p>
 
-            <p
-              class="mt-1 text-2xl font-semibold leading-none"
-              style={`color: ${value?.color ?? "#94a3b8"}`}
-            >
-              {value ? `${value.value.toFixed(1)} °C` : "—"}
-            </p>
+            {#if value}
+              <p
+                class="mt-1 text-2xl font-semibold leading-none"
+                style={`color: ${value.color}`}
+              >
+                {value.value.toFixed(1)} °C
+              </p>
 
-            <p class="mt-1 text-xs text-slate-400">
-              {value?.label ?? translate("noRasterValue", language)}
-            </p>
+              <p class="mt-1 text-xs text-slate-400">{value.label}</p>
+            {:else}
+              <p class="mt-1 text-2xl font-semibold leading-none text-slate-500">
+                —
+              </p>
+
+              <p class="mt-1 text-xs text-amber-200">
+                {translate("pointNoData", language)}
+              </p>
+            {/if}
           </div>
 
           <dl class="text-right font-mono text-[10px] text-slate-400">
@@ -249,17 +257,28 @@
       display: none;
     }
 
+    /* A l'escriptori el panell s'ancora a la cantonada superior dreta del
+       mapa (just a sota de la navbar), amb alçada variable segons el
+       contingut i l'estil del panell esquerre: recte, sense ombra flotant
+       i amb una vora a l'esquerra que el separa del mapa. Els controls
+       de MapLibre són a la cantonada inferior dreta i no hi haurien
+       solapament. */
     .point-panel {
       position: absolute;
-      inset: 5rem 0.75rem 2rem auto;
+      top: 0;
+      right: 0;
+      bottom: auto;
+      left: auto;
       width: 340px;
       height: auto;
-      max-height: none;
-      border: 1px solid rgb(255 255 255 / 0.1);
-      border-radius: 0.75rem;
-      background: rgb(16 24 33 / 0.97);
-      box-shadow: 0 18px 50px rgb(0 0 0 / 0.55);
-      transform: translateX(calc(100% + 0.75rem));
+      max-height: calc(100% - 7rem);
+      overflow-y: auto;
+      border: 0;
+      border-left: 1px solid rgb(255 255 255 / 0.1);
+      border-radius: 0;
+      background: #101821;
+      box-shadow: -10px 0 30px rgb(0 0 0 / 0.45);
+      transform: translateX(100%);
       transition: transform 250ms var(--ease-out);
     }
 
