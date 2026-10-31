@@ -16,6 +16,7 @@
     selectedHour = 0,
     loadingSeries = false,
     language = "ca",
+    displayMode = "utci",
     closeLabel = "Close",
     resizeLabel = "Resize panel",
     onClose = () => {},
@@ -207,6 +208,7 @@
           {series}
           {selectedHour}
           {language}
+          {displayMode}
           loading={loadingSeries}
           {onSelectHour}
         />

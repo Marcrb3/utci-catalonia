@@ -30,13 +30,13 @@ App Svelte/Vite d'una sola pàgina. **Pràcticament tota la lògic viu a `src/Ap
 - `src/main.js` — munta l'app, importa el CSS de MapLibre, crida `setWorkerUrl()` amb un import `?worker&url` i **registra el service worker** (només en producció). **Cal mantenir-ho** o el worker de MapLibre no es resol a Vite.
 - `src/dictionary.js` — totes les traduccions de la UI + `translate(key, language)` i `interpolate(template, vars)` (substitueix `{nom}`).
 - `src/lib/Timeline.svelte` — control temporal (capçalera de data, slider, tira de dies amb indicador lliscant). Component **presentacional**: rep `forecast`, `selectedHour`, `isPlaying` i callbacks (`onPrev`, `onNext`, `onTogglePlay`, `onSelectHour`). Té un **mode compact** propi (matchQuery `(max-width: 1279px)`) que comprimeix la capçalera i els controls per deixar més mapa a les pantalles petites.
-- `src/lib/Legend.svelte` — llegenda de l'escala UTCI, reutilitzada al panell lateral i als fulls mòbils. El títol el posa el pare.
+- `src/lib/Legend.svelte` — llegenda de l'escala UTCI, reutilitzada al panell lateral i als fulls mòbils. Tres branques: classes (`utci`), rampa contínua (`continuous`) i una branca morta (`{:else}`) que es manté intacta. El títol el posa el pare.
 - `src/lib/Sheet.svelte` — full inferior reutilitzable (backdrop, tirador, focus, Esc, animació d'entrada i sortida, redimensionat arrossegeant la maneta).
 - `src/lib/PointPanel.svelte` — informació del punt + gràfica. Targeta flotant sobre el mapa a l'escriptori i full inferior al mòbil (el mateix component, dos posicionaments).
-- `src/lib/Chart.svelte` — gràfica de tota la previsió: línia colorejada per classe UTCI, àrea, separadors de dia, cursor del fotograma seleccionat. És un `role="slider"`: clic, ratolí i fletxes canvien el fotograma.
+- `src/lib/Chart.svelte` — gràfica de tota la previsió: línia colorejada segons el mode de representació (`displayMode`), àrea, separadors de dia, cursor del fotograma seleccionat. És un `role="slider"`: clic, ratolí i fletxes canvien el fotograma.
 - `src/lib/InfoPanel.svelte` — contingut informatiu sobre l'UTCI (acordió a l'escriptori, full al mòbil).
 - `src/lib/resize.js` — acció `verticalResize`: arrossegar verticalment un panell inferior amb el punter (captura el punter, `touch-action: none` a la maneta).
-- `src/lib/utci-classes.js` — `classes` (amb `min`/`max`/`c`/`label`/`range`), `classLabels`, `rangeKeys`, `getClass(value)`, `colorForValue(value)` i els ajudants `labelForClass(item, language)` / `rangeForClass(item, language)`.
+- `src/lib/utci-classes.js` — `classes` (amb `min`/`max`/`c`/`label`/`range`), `classLabels`, `rangeKeys`, `getClass(value)`, `colorForValue(value, displayMode)` (classe o rampa) i els ajudants `labelForClass(item, language)` / `rangeForClass(item, language)`. La rampa contínua (`rampStops`, `rampTicks`, `rampTickPercent()`, `rampColorForValue()`, `rampGradientCss()`) s'interpola linealment entre els punts mitjans de cada classe, amb domini clampat a [−40, 46].
 - `src/lib/time.js` — formatació de dates en `Europe/Madrid`: `formatWeekdayLong/Short`, `formatDayMonth`, `formatDateShort`, `formatTime`, `formatShortDateTime`, `formatFullDate`, `dayKey`, `relativeDayLabel`, `hoursBetween` i `firstVisibleIndex(items, now)`.
 - `src/lib/Counter.svelte`, `src/assets/svelte.svg`, `public/vite.svg` — residus del scaffold, no s'usen.
 

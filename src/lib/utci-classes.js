@@ -118,8 +118,87 @@ export function getClass(value) {
   );
 }
 
-// Color de la classe d'un valor (per a la gràfica).
-export function colorForValue(value) {
+// --- Rampa contínua ---------------------------------------------------
+// Mateixa paleta que les classes, interpolada linealment entre els
+// punts mitjans de cada interval: cada color es veu al centre de la seva
+// classe i les transicions passen pels límits de classe. Els intervals
+// infinits es queden al seu límit, de manera que els valors per fora del
+// domini es clampen al color de l'extrem.
+
+function midpoint(item) {
+  const min = Number.isFinite(item.min) ? item.min : null;
+  const max = Number.isFinite(item.max) ? item.max : null;
+
+  if (min === null) return max; // classe més freda
+  if (max === null) return min; // classe més calenta
+
+  return (min + max) / 2;
+}
+
+export const rampStops = classes.map((item) => ({
+  value: midpoint(item),
+  c: item.c,
+}));
+
+export const RAMP_MIN = rampStops[0].value; // −40
+export const RAMP_MAX = rampStops[rampStops.length - 1].value; // 46
+
+// Marques de la llegenda contínua: límits de classe rellevants, sense
+// saturar l'amplada del panell.
+export const rampTicks = [-40, -13, 0, 9, 26, 38, 46];
+
+export function rampTickPercent(value) {
+  return ((value - RAMP_MIN) / (RAMP_MAX - RAMP_MIN)) * 100;
+}
+
+function mixHex(from, to, t) {
+  const channel = (hex, i) =>
+    parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+
+  const mixed = [0, 1, 2].map((i) =>
+    Math.round(channel(from, i) + (channel(to, i) - channel(from, i)) * t),
+  );
+
+  return `#${mixed.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+// Color de la rampa contínua per a un valor (amb clamp al domini).
+export function rampColorForValue(value) {
+  if (!Number.isFinite(value)) return "#64748b";
+
+  const v = Math.min(RAMP_MAX, Math.max(RAMP_MIN, value));
+
+  let from = rampStops[0];
+  let to = rampStops[rampStops.length - 1];
+
+  for (let i = 0; i < rampStops.length - 1; i++) {
+    if (v >= rampStops[i].value && v <= rampStops[i + 1].value) {
+      from = rampStops[i];
+      to = rampStops[i + 1];
+      break;
+    }
+  }
+
+  const span = to.value - from.value;
+  const t = span === 0 ? 0 : (v - from.value) / span;
+
+  return mixHex(from.c, to.c, t);
+}
+
+// Degradat CSS de la rampa, amb els mateixos stops que rampColorForValue.
+export function rampGradientCss() {
+  const stops = rampStops
+    .map((stop) => `${stop.c} ${rampTickPercent(stop.value).toFixed(2)}%`)
+    .join(", ");
+
+  return `linear-gradient(90deg, ${stops})`;
+}
+
+// Color de la gràfica: per defecte la classe (mode categoritzat);
+// amb displayMode "continuous", la rampa.
+export function colorForValue(value, displayMode = "utci") {
+  if (displayMode === "continuous") return rampColorForValue(value);
+
   if (!Number.isFinite(value)) return "#64748b";
 
   return getClass(value).c;

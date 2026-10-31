@@ -9,7 +9,7 @@
   import Sheet from "./lib/Sheet.svelte";
   import PointPanel from "./lib/PointPanel.svelte";
   import InfoPanel from "./lib/InfoPanel.svelte";
-  import { classes, labelForClass, getClass } from "./lib/utci-classes.js";
+  import { classes, labelForClass, getClass, colorForValue, rampGradientCss } from "./lib/utci-classes.js";
   import {
     formatTime,
     formatWeekdayShort,
@@ -122,8 +122,17 @@
   // Les etiquetes dels controls de MapLibre segueixen l'idioma.
   $: if (map && language) updateControlLabels();
 
+  // Títol de la llegenda segons el mode de representació.
+  $: legendTitle =
+    displayMode === "continuous"
+      ? tr("continuousLegend")
+      : displayMode === "utci"
+        ? tr("utciLegend")
+        : tr("stressCategories");
+
   $: selectedValue = (() => {
     language;
+    displayMode;
     return selectedPoint && currentRaster
       ? sampleAt(selectedPoint.lng, selectedPoint.lat, currentRaster)
       : null;
@@ -365,16 +374,20 @@
   }
 
   async function prepareRaster(item) {
+    const mode = displayMode;
     const url = rasterUrl(item);
+    // La clau de cache inclou el mode: la mateixa imatge es prepara un cop
+    // per a cada mode de representació.
+    const cacheKey = `${mode}|${url}`;
 
     // Si ja tenim la imatge preparada, la reutilitzem.
-    if (rasterImageCache.has(url)) {
-      return rasterImageCache.get(url);
+    if (rasterImageCache.has(cacheKey)) {
+      return rasterImageCache.get(cacheKey);
     }
 
     // Si ja s'està preparant, compartim la mateixa operació.
-    if (rasterPreparationCache.has(url)) {
-      return rasterPreparationCache.get(url);
+    if (rasterPreparationCache.has(cacheKey)) {
+      return rasterPreparationCache.get(cacheKey);
     }
 
     const promise = (async () => {
@@ -404,7 +417,7 @@
           continue;
         }
 
-        const [r, g, b] = hexRgb(getClass(v).c);
+        const [r, g, b] = hexRgb(colorForValue(v, mode));
 
         pixels.data[p] = r;
         pixels.data[p + 1] = g;
@@ -430,22 +443,23 @@
 
       const prepared = {
         url,
+        mode,
         imageUrl,
         coordinates: rasterCoordinates(raster),
         raster,
       };
 
-      rasterImageCache.set(url, prepared);
+      rasterImageCache.set(cacheKey, prepared);
 
       return prepared;
     })();
 
-    rasterPreparationCache.set(url, promise);
+    rasterPreparationCache.set(cacheKey, promise);
 
     try {
       return await promise;
     } finally {
-      rasterPreparationCache.delete(url);
+      rasterPreparationCache.delete(cacheKey);
     }
   }
 
@@ -537,7 +551,11 @@
 
     const current = displayedPrepared;
 
-    if (!current || current.url === prepared.url) {
+    // Mateixa imatge (mateixa URL i mateix mode): només actualitzem.
+    if (
+      !current ||
+      (current.url === prepared.url && current.mode === prepared.mode)
+    ) {
       source.updateImage({
         url: prepared.imageUrl,
         coordinates: prepared.coordinates,
@@ -681,7 +699,7 @@
     return {
       value,
       label: classLabel(category),
-      color: category.c,
+      color: colorForValue(value, displayMode),
       range: category.range,
     };
   }
@@ -921,7 +939,6 @@
             time,
             label: formatShortDateTime(time, language),
             value: sample?.value ?? null,
-            color: sample?.color ?? "#64748b",
           });
         } catch (error) {
           console.warn("No s'ha pogut consultar un ràster:", error);
@@ -931,7 +948,6 @@
             time,
             label: formatShortDateTime(time, language),
             value: null,
-            color: "#64748b",
           });
         }
 
@@ -946,8 +962,17 @@
     }
   }
 
+  // Canvia el mode de representació. Les imatges preparades es guarden per
+  // mode, així que tornar enrere és instantani; el fotograma visible es
+  // torna a preparar amb el nou mode i la precàrrega cobreix la resta.
   function selectMode(mode) {
+    if (mode === displayMode) return;
+
     displayMode = mode;
+    preloadPromise = null;
+    preloadAllRasters();
+
+    if (map && activeForecast) showForecast();
   }
 
   function changeHour(n) {
@@ -1307,11 +1332,41 @@
       </section>
 
       <div class="h-px bg-white/10"></div>
+
+      <!-- Mode de representació: categoritzat o rampa contínua. -->
+      <section class="shrink-0">
+        <h2
+          class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
+        >
+          {tr("displayMode")}
+        </h2>
+
+        <div
+          class="flex items-center rounded-lg border border-white/10 bg-[#0b1118] p-0.5"
+          role="group"
+          aria-label={tr("displayMode")}
+        >
+          <button
+            type="button"
+            class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${displayMode === "utci" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+            aria-pressed={displayMode === "utci"}
+            onclick={() => selectMode("utci")}>{tr("modeUtci")}</button
+          >
+          <button
+            type="button"
+            class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${displayMode === "continuous" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+            aria-pressed={displayMode === "continuous"}
+            onclick={() => selectMode("continuous")}
+            >{tr("modeContinuous")}</button
+          >
+        </div>
+      </section>
+
       <section class="hidden xl:block">
         <h2
           class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
         >
-          {displayMode === "utci" ? tr("utciLegend") : tr("stressCategories")}
+          {legendTitle}
         </h2>
 
         <Legend {classes} {language} {displayMode} />
@@ -1396,9 +1451,15 @@
             class="flex h-3 w-4 overflow-hidden rounded-sm"
             aria-hidden="true"
           >
-            {#each classes as item}
-              <span class="flex-1" style={`background:${item.c}`}></span>
-            {/each}
+            {#if displayMode === "continuous"}
+              <span
+                class="flex-1"
+                style={`background:${rampGradientCss()}`}></span>
+            {:else}
+              {#each classes as item}
+                <span class="flex-1" style={`background:${item.c}`}></span>
+              {/each}
+            {/if}
           </span>
 
           {tr("legendButton")}
@@ -1481,6 +1542,7 @@
         selectedHour={Number(selectedHour)}
         {loadingSeries}
         {language}
+        {displayMode}
         closeLabel={tr("close")}
         resizeLabel={tr("resizePanel")}
         onClose={closePointPanel}
@@ -1493,7 +1555,7 @@
   <!-- Full de la llegenda per a pantalles petites. -->
   <Sheet
     bind:open={showMobileLegend}
-    title={displayMode === "utci" ? tr("utciLegend") : tr("stressCategories")}
+    title={legendTitle}
     closeLabel={tr("close")}
     resizeLabel={tr("resizePanel")}
     onClose={closeLegend}

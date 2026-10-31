@@ -10,6 +10,7 @@
     series = [],
     selectedHour = 0,
     language = "ca",
+    displayMode = "utci",
     loading = false,
     onSelectHour = () => {},
   } = $props();
@@ -82,7 +83,7 @@
 
   const validPlotted = $derived(plotted.filter((point) => point.y !== null));
 
-  // Trams de la línia: un per cada punt, amb el color de la classe.
+  // Trams de la línia: un per cada punt, amb el color segons el mode.
   const segments = $derived.by(() => {
     const result = [];
 
@@ -97,7 +98,7 @@
         y1: from.y,
         x2: to.x,
         y2: to.y,
-        color: colorForValue(middle),
+        color: colorForValue(middle, displayMode),
       });
     }
 
@@ -324,7 +325,7 @@
           cx={point.x}
           cy={point.y}
           r={point.index === Number(selectedHour) ? 4.5 : 2.6}
-          fill={point.color}
+          fill={colorForValue(point.value, displayMode)}
           stroke={point.index === Number(selectedHour) ? "#ffffff" : "#0b1118"}
           stroke-width={point.index === Number(selectedHour) ? 1.5 : 0.7}
         >

@@ -13,7 +13,7 @@ Aplicació web interactiva per visualitzar dades de l'índex **Universal Thermal
 ### Mapa i representació
 
 - **Mapa interactiu** amb MapLibre GL JS i l'estil base fosc de l'ICGC.
-- **Capa ràster UTCI** classificada per categories d'estrès tèrmic, amb transparència per deixar veure el relleu.
+- **Capa ràster UTCI** amb dos modes de representació, selectable des del panell lateral: **categoritzat** (classes d’estrès tèrmic) o **continu** (rampa interpolada de la mateixa paleta). En tots dos la transparència deixa veure el relleu.
 - **Ombrejat del relleu** (hillshade) calculat a partir del DEM de Mapterhorn.
 - **Animació entre fotogrames**: en canviar d'hora, la imatge anterior es fon amb la nova.
 - **Punt seleccionat** amb marca pulsant, geolocalització i consulta del municipi.
@@ -30,7 +30,9 @@ Aplicació web interactiva per visualitzar dades de l'índex **Universal Thermal
 
 ### Llegenda
 
-- **Escala de classes UTCI** amb els intervals de temperatura (de «menys de −40 °C» a «més de 46 °C»).
+- **Selector de mode de representació** al panell lateral: **categoritzat** o **continu**. El mode afecta tot l’aplicació: el ràster del mapa, la llegenda, el color del valor al panell del punt i els colors de la gràfica.
+- **Escala de classes UTCI** (mode categoritzat) amb els intervals de temperatura (de «menys de −40 °C» a «més de 46 °C»).
+- **Rampa contínua** (mode continu): degradat interpolat a partir de la mateixa paleta de classes, amb marques als límits rellevants.
 - Present al panell lateral a l’escriptori i en un **full inferior** arrosegable a mòbil.
 
 ### Consulta de punts
@@ -41,7 +43,7 @@ Aplicació web interactiva per visualitzar dades de l'índex **Universal Thermal
   - el **valor d’UTCI** i la seva categoria d’estrès,
   - la **gràfica d’evolució** de tot el període de previsió.
 - **Punts sense dades**: si es clica fora de la malla de dades (mar, fora de Catalunya) o l’API no torna un municipi vàlid, el panell indica «No hi ha dades per a aquest punt» en lloc de mostrar text sense sentit.
-- **Gràfica de tota la previsió**: línia colorejada segons la classe UTCI de cada tram, àrea ombrada, separadors de dia i cursor al fotograma seleccionat. Es pot **clicar o recórrer amb el teclat** per canviar el fotograma.
+- **Gràfica de tota la previsió**: línia colorejada segons el mode de representació (classe UTCI o rampa contínua) de cada tram, àrea ombrada, separadors de dia i cursor al fotograma seleccionat. Es pot **clicar o recórrer amb el teclat** per canviar el fotograma.
 
 ### Altres
 
