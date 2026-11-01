@@ -58,6 +58,11 @@
   let loadingRaster = false;
   let loadingSeries = false;
 
+  // Canvi en curs del mode de representació: manté l'spinner fins que la
+  // nova tematització s'ha renderitzat al mapa.
+  let switchingMode = false;
+  let modeSwitchId = 0;
+
   let initialMapLoading = true;
   let initialRasterReady = false;
 
@@ -80,7 +85,10 @@
 
   const PRELOAD_CONCURRENCY = 2;
   const PLAYBACK_INTERVAL_MS = 900;
-  const RASTER_OPACITY = 0.88;
+  // Opacitat del ràster sobre el mapa base. Els píxels PNG es bullen
+  // opacs (alfa 255): tota la transparència ve d'aquesta opacitat, de
+  // manera que no hi ha una segona dilució que enfosqueixi els colors.
+  const RASTER_OPACITY = 0.9;
   const RASTER_FADE_MS = 260;
 
   let seriesRequestId = 0;
@@ -422,7 +430,10 @@
         pixels.data[p] = r;
         pixels.data[p + 1] = g;
         pixels.data[p + 2] = b;
-        pixels.data[p + 3] = 210;
+        // Pigment opac: la transparència del ràster es controla només amb
+        // `raster-opacity`. Amb alfa 210 els colors es diluïen dues
+        // vegades (píxel + capa) i quedaven apagats sobre el mapa base.
+        pixels.data[p + 3] = 255;
       }
 
       ctx.putImageData(pixels, 0, 0);
@@ -467,12 +478,10 @@
     if (!map || destroyed) return;
 
     const source = map.getSource("utci-raster-source");
+    // La imatge que es veu fins ara: és el punt de partida del cross-fade.
+    const from = displayedPrepared;
 
-    if (source) {
-      crossFadeRaster(prepared).catch((error) => {
-        console.warn("No s'ha pogut fer el cross-fade del ràster:", error);
-      });
-    } else {
+    if (!source) {
       map.addSource("utci-raster-source", {
         type: "image",
         url: prepared.imageUrl,
@@ -509,13 +518,25 @@
       ordenarCapes();
     }
 
+    // L'estat s'actualitza abans de llençar el fade: displayedPrepared és
+    // la imatge d'origen del següent cross-fade i currentRaster alimenta
+    // les mostres del panell del punt.
     currentRaster = prepared.raster;
     displayedPrepared = prepared;
     statusMessage = tr("rasterLoaded");
     initialRasterReady = true;
+
+    if (source) {
+      // Esperem el cross-fade: el mode de càrrega (i l'spinner del canvi
+      // de mode) no s'ha d'amagar abans que la nova tematització sigui
+      // visible al mapa.
+      return crossFadeRaster(prepared, from).catch((error) => {
+        console.warn("No s'ha pogut fer el cross-fade del ràster:", error);
+      });
+    }
   }
 
-  // Espera que la font d'una imarga estigui carregada (amb límit de temps).
+  // Espera que la font d'una imatge estigui carregada (amb límit de temps).
   function waitForSourceData(source, timeout = 400) {
     return new Promise((resolve) => {
       let settled = false;
@@ -538,10 +559,13 @@
   // Cross-fade entre fotogrames.
   //
   // La imatge anterior viu en una capa auxiliar, per sobre de la capa
-  // principal. Quan canvia el fotograma: la auxiliar carrega la imatge que
-  // es veia, es torna a mostrar, la principal rep la nova per sota i,
-  // quan la nova ja és carregada, la auxiliar s'apaga.
-  async function crossFadeRaster(prepared) {
+  // principal. El canvi es fa en quatre passos: la auxiliar carrega la
+  // imatge que es veu (amagada), es produeix un traspàs invisible
+  // (auxiliar a opacitat plena i principal a 0, en el mateix fotograma:
+  // la composició resultant és exactament l'estable), la principal rep
+  // la nova imatge per sota i, quan ja és carregada, animateRasterFade()
+  // les fona.
+  async function crossFadeRaster(prepared, from) {
     const id = ++fadeRequestId;
 
     const source = map?.getSource("utci-raster-source");
@@ -549,13 +573,15 @@
 
     if (!source || !previous) return;
 
-    const current = displayedPrepared;
-
     // Mateixa imatge (mateixa URL i mateix mode): només actualitzem.
+    // Restablim l'estat estable per si hi havia un fade a mig camí.
     if (
-      !current ||
-      (current.url === prepared.url && current.mode === prepared.mode)
+      !from ||
+      (from.url === prepared.url && from.mode === prepared.mode)
     ) {
+      setRasterOpacity("utci-raster-layer", RASTER_OPACITY, 0);
+      setRasterOpacity("utci-raster-prev-layer", 0, 0);
+
       source.updateImage({
         url: prepared.imageUrl,
         coordinates: prepared.coordinates,
@@ -564,46 +590,108 @@
       return;
     }
 
-    // La capa auxiliar amaga de cop: si un cross-fade anterior s'ha
-    // quedat a mitges, no deixem una imatge vella penjada.
-    setPreviousRasterOpacity(0, 0);
+    // 0) Un cross-fade anterior s'ha interromput: el tanquem de cop. La
+    //    principal ja conté la imatge objectiu d'aquell fade, així que
+    //    deixem l'estat estable sense cap fotograma a mig camí.
+    setRasterOpacity("utci-raster-layer", RASTER_OPACITY, 0);
+    setRasterOpacity("utci-raster-prev-layer", 0, 0);
 
-    // 1) La capa auxiliar carrega la imatge que es mostra ara.
+    // 1) La capa auxiliar carrega la imatge que es veu ara, amagada.
+    const previousReady = waitForSourceData(previous);
+
     previous.updateImage({
-      url: current.imageUrl,
-      coordinates: current.coordinates,
+      url: from.imageUrl,
+      coordinates: from.coordinates,
     });
 
-    await waitForSourceData(previous);
+    await previousReady;
 
     if (id !== fadeRequestId || destroyed) return;
 
-    // 2) La imatge actualitzada es torna a veure: ara és la superior.
-    setPreviousRasterOpacity(RASTER_OPACITY, 0);
+    // 2) Traspàs invisible: la auxiliar passa a mostrar la imatge antiga
+    //    a opacitat plena i la principal s'amaga. La composició resultant
+    //    és exactament l'estable, així que no es percep cap salt.
+    setRasterOpacity("utci-raster-layer", 0, 0);
+    setRasterOpacity("utci-raster-prev-layer", RASTER_OPACITY, 0);
 
-    // 3) La nova entra per sota.
+    // 3) La principal rep la nova imatge per sota, invisible.
+    const sourceReady = waitForSourceData(source);
+
     source.updateImage({
       url: prepared.imageUrl,
       coordinates: prepared.coordinates,
     });
 
-    await waitForSourceData(source);
+    await sourceReady;
 
     if (id !== fadeRequestId || destroyed) return;
 
-    // 4) La vella es fon i deixa veure la nova.
-    setPreviousRasterOpacity(0, RASTER_FADE_MS);
+    // 4) Fade coordinat entre les dues capes.
+    await animateRasterFade(id);
   }
 
-  function setPreviousRasterOpacity(value, duration) {
-    if (!map?.getLayer("utci-raster-prev-layer")) return;
+  // Fa el fade entre les dues capes mantenint la cobertura constant.
+  //
+  // Si les capes baixessin i pugessin de forma lineal, a meitat de
+  // transició totes dues serien visibles alhora i la cobertura sobre el
+  // mapa base pujaria: els colors es "duplicarien" i es veuria un flaig
+  // fosc. Per això la capa principal puja amb la corba que compensa
+  // exactament el que deixa d'aportar la superior: el que es percep és
+  // només una barreja dels colors, amb la mateixa opacitat de sempre.
+  function animateRasterFade(id) {
+    const duration = prefersReducedMotion() ? 0 : RASTER_FADE_MS;
+    const start = performance.now();
 
-    map.setPaintProperty("utci-raster-prev-layer", "raster-opacity-transition", {
+    return new Promise((resolve) => {
+      const frame = (now) => {
+        if (id !== fadeRequestId || destroyed || !map) {
+          resolve();
+          return;
+        }
+
+        const t = duration === 0 ? 1 : Math.min(1, (now - start) / duration);
+        const top = RASTER_OPACITY * (1 - t);
+        const bottom = (RASTER_OPACITY * t) / (1 - RASTER_OPACITY * (1 - t));
+
+        map.setPaintProperty("utci-raster-prev-layer", "raster-opacity", top);
+        map.setPaintProperty("utci-raster-layer", "raster-opacity", bottom);
+
+        if (t < 1) {
+          requestAnimationFrame(frame);
+          return;
+        }
+
+        // Punt final exacte: evita errors de coma flotant.
+        map.setPaintProperty("utci-raster-prev-layer", "raster-opacity", 0);
+        map.setPaintProperty(
+          "utci-raster-layer",
+          "raster-opacity",
+          RASTER_OPACITY,
+        );
+
+        resolve();
+      };
+
+      requestAnimationFrame(frame);
+    });
+  }
+
+  function prefersReducedMotion() {
+    return (
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  }
+
+  function setRasterOpacity(layerId, value, duration) {
+    if (!map?.getLayer(layerId)) return;
+
+    map.setPaintProperty(layerId, "raster-opacity-transition", {
       duration,
       delay: 0,
     });
 
-    map.setPaintProperty("utci-raster-prev-layer", "raster-opacity", value);
+    map.setPaintProperty(layerId, "raster-opacity", value);
   }
 
   function waitForInitialRasterRender() {
@@ -640,7 +728,7 @@
       // Si l'usuari ja ha triat un altre fotograma, no mostrem aquest.
       if (id !== requestId || destroyed) return;
 
-      ensureRasterLayer(prepared);
+      await ensureRasterLayer(prepared);
 
       if (!initialMapLoading) {
         // El mapa ja havia completat la càrrega inicial.
@@ -965,14 +1053,23 @@
   // Canvia el mode de representació. Les imatges preparades es guarden per
   // mode, així que tornar enrere és instantani; el fotograma visible es
   // torna a preparar amb el nou mode i la precàrrega cobreix la resta.
-  function selectMode(mode) {
+  // L'spinner es manté fins que showForecast ha renderitzat el mapa.
+  async function selectMode(mode) {
     if (mode === displayMode) return;
 
+    const id = ++modeSwitchId;
+
+    switchingMode = true;
     displayMode = mode;
     preloadPromise = null;
     preloadAllRasters();
 
-    if (map && activeForecast) showForecast();
+    try {
+      if (map && activeForecast) await showForecast();
+    } finally {
+      // Un segon canvi ràpid de mode deixa l'estat en mans del darrer.
+      if (id === modeSwitchId) switchingMode = false;
+    }
   }
 
   function changeHour(n) {
@@ -1430,6 +1527,21 @@
             </p>
           </div>
         </div>
+      {:else if switchingMode}
+        <!-- Canvi de mode de representació: spinner sobre el mapa fins
+             que la nova tematització s'ha renderitzat. -->
+        <div
+          class="absolute inset-0 z-30 flex flex-col items-center justify-center
+           gap-3 bg-[#0b1118]/60 text-slate-300 backdrop-blur-[2px]"
+          role="status"
+          aria-live="polite"
+        >
+          <div class="utci-spinner" aria-hidden="true"></div>
+
+          <p class="text-xs font-medium text-teal-200">
+            {tr("renderingMap")}
+          </p>
+        </div>
       {/if}
 
       <!-- Botons flotants: només en pantalles petites. -->
@@ -1698,6 +1810,13 @@
     border: 1px solid rgb(255 255 255 / 12%) !important;
     border-radius: 10px !important;
     background: #101821 !important;
+  }
+
+  /* Tot el mapa és clicable (clic = consulta el valor UTCI del punt).
+     MapLibre posa `grabbing` mitjançant estil inline mentre
+     s'arrossega, i en deixar-ho torna a aquest cursor. */
+  :global(.maplibregl-canvas) {
+    cursor: pointer;
   }
 
   :global(.maplibregl-ctrl-group button) {

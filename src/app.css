@@ -43,3 +43,18 @@ body,
 body {
   min-height: 100vh;
 }
+
+/* Elements clicables: cursor de mà. Les utilitats de Tailwind (p. ex.
+   cursor-grab) i els estils scoped tenen prioritat sobre aquesta regla,
+   així que els fons dels fulls i les manetes conserven el seu cursor. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="slider"],
+a[href] {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}

@@ -59,7 +59,7 @@ Si cal afegir dades, el contracte és:
 
 Tres caches indexades per URL: `rasterCache` (valors decodificats), `rasterImageCache` (object URLs de PNG), `rasterPreparationCache` (promeses en curs).
 
-TIFF → valors → classificació per píxel → canvas → `toBlob` PNG → `URL.createObjectURL` → `source.updateImage()`. El nodata prové de l'etiqueta `GDAL_NODATA`; els píxels nodata es deixen amb alfa 0.
+TIFF → valors → classificació per píxel → canvas → `toBlob` PNG → `URL.createObjectURL` → `source.updateImage()`. El nodata prové de l'etiqueta `GDAL_NODATA`; els píxels nodata es deixen amb alfa 0. Els píxels vàlids es bullen opacs (alfa 255): l'opacitat efectiva ve només de `raster-opacity` (`RASTER_OPACITY`).
 
 - La precàrrega usa `PRELOAD_CONCURRENCY = 2`.
 - La reproducció (900 ms per fotograma) **espera `prepareRaster()` abans d'avançar** perquè el mapa no quedi en blanc.
@@ -82,7 +82,7 @@ Ids de source/layer: `utci-raster-source`, `utci-raster-layer`, `utci-raster-pre
 
 `ordenarCapes()` reordena sota l'estil base de l'ICGC: hillshade i ràster UTCI queden per sota de la primera capa de text. Espera l'event `idle` si l'estil no està carregat. Crida-la després d'afegir capes.
 
-- **Cross-fade**: hi ha una capa auxiliar (`utci-raster-prev-layer`) **per sobre** de la principal. `crossFadeRaster()` fa: la auxiliar carrega la imatge visible → es torna a mostrar → la principal rep la nova per sota → quan la font ha carregat (`waitForSourceData`, que espera l'event `data` amb límit de 400 ms) la auxiliar s'apaga amb `raster-opacity-transition`. La textura es puja de forma asíncrona: si no s'espera, es veu un fotograma vell parpellejant.
+- **Cross-fade**: hi ha una capa auxiliar (`utci-raster-prev-layer`) **per sobre** de la principal. `crossFadeRaster(prepared, from)` fa: la auxiliar carrega la imatge visible (amagada) → traspàs invisible (auxiliar a `RASTER_OPACITY`, principal a 0, en el mateix fotograma) → la principal rep la nova per sota → `animateRasterFade()` les fona amb `requestAnimationFrame` coordinant les dues opacitats perquè la cobertura total es mantingui constant (una baixada i pujada lineals duplicarien els colors i produirien un flaig fosc). `ensureRasterLayer` fixa `displayedPrepared` **abans** de llençar el fade: és la imatge d'origen del següent. La textura es puja de forma asíncrona: si no s'espera (`waitForSourceData`, que espera l'event `data` amb límit de 400 ms), es veu un fotograma vell parpellejant.
 - El punt seleccionat **ja no és una capa**: és un `maplibregl.Marker` HTML (`.selected-marker`) per poder fer la pols en CSS sense redibuixar el mapa.
 
 ## API Territorial (municipi)

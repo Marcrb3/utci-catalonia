@@ -123,7 +123,10 @@ export function getClass(value) {
 // punts mitjans de cada interval: cada color es veu al centre de la seva
 // classe i les transicions passen pels límits de classe. Els intervals
 // infinits es queden al seu límit, de manera que els valors per fora del
-// domini es clampen al color de l'extrem.
+// domini es clampen al color de l'extrem. Cada classe té un to propi
+// (cian, verd, groc, taronja…), així es diferencien bé les temperatures
+// moderades, que en una rampa blau-vermell clara al centre quedaven
+// massa semblants.
 
 function midpoint(item) {
   const min = Number.isFinite(item.min) ? item.min : null;
