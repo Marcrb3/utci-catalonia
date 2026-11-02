@@ -42,6 +42,7 @@ Aplicació web interactiva per visualitzar dades de l'índex **Universal Thermal
   - les **coordenades**,
   - el **valor d’UTCI** i la seva categoria d’estrès,
   - la **gràfica d’evolució** de tot el període de previsió.
+- **Cercador a la navbar**: geocodificador amb autocomplete (API de geocodificador de l’ICGC) al centre de la barra superior. Cerca llocs, topònims i adreces prioritzant els resultats propers al mapa; en seleccionar-ne un, s’acosta al punt i s’obre el seu panell de previsió. Funciona amb teclat (fletxes i Enter) i, al mòbil, ocupa una segona fila a tot l’ample.
 - **Punts sense dades**: si es clica fora de la malla de dades (mar, fora de Catalunya) o l’API no torna un municipi vàlid, el panell indica «No hi ha dades per a aquest punt» en lloc de mostrar text sense sentit.
 - **Gràfica de tota la previsió**: línia colorejada segons el mode de representació (classe UTCI o rampa contínua) de cada tram, àrea ombrada, separadors de dia i cursor al fotograma seleccionat. Es pot **clicar o recórrer amb el teclat** per canviar el fotograma.
 

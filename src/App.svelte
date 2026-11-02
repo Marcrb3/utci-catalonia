@@ -9,6 +9,7 @@
   import Sheet from "./lib/Sheet.svelte";
   import PointPanel from "./lib/PointPanel.svelte";
   import InfoPanel from "./lib/InfoPanel.svelte";
+  import Geocoder from "./lib/Geocoder.svelte";
   import { classes, labelForClass, getClass, colorForValue, rampGradientCss } from "./lib/utci-classes.js";
   import {
     formatTime,
@@ -90,6 +91,16 @@
   // manera que no hi ha una segona dilució que enfosqueixi els colors.
   const RASTER_OPACITY = 0.9;
   const RASTER_FADE_MS = 260;
+
+  // L'ancoratge del ràster depèn del zoom: a partir d'aquest llindar (pobles
+  // des de z10, barris i límits municipals des de z11, noms de carrer des de
+  // z14) es baixa fins a la posició inicial i tot el detall del mapa es
+  // dibuixa per damunt; per sota, una posició intermèdia en què la trama de
+  // fons queda tintada i la xarxa viària, els límits i totes les etiquetes
+  // es llegeixen a sobre.
+  const ZOOM_DETALL = 10;
+  const ANCLA_DETALL = "contour-cotes"; // posició inicial del ràster
+  const ANCLA_GENERAL = "tunnel-service-track-casing";
 
   let seriesRequestId = 0;
   let seriesPointKey = null;
@@ -285,32 +296,64 @@
   function ordenarCapes() {
     if (!map) return;
 
-    // Si l'estil encara no està preparat, esperar que MapLibre
-    // hagi acabat de carregar-lo.
-    if (!map.isStyleLoaded()) {
+    const layers = map.getStyle()?.layers ?? [];
+
+    // Estil encara no aplicat (només passa en la càrrega inicial): reintentar
+    // a l'`idle`, quan MapLibre ja té les capes. Un cop aplicat, l'ordre es
+    // calcula de seguida: `isStyleLoaded()` es queda fals durant segons
+    // després d'un canvi de zoom (tiles i glifs pendents) i, esperant-lo,
+    // el reordenatge s'endarreria fins a l'esdeveniment `idle`.
+    if (layers.length === 0) {
       map.once("idle", ordenarCapes);
       return;
     }
-
-    const layers = map.getStyle()?.layers ?? [];
 
     const primeraCapaText = layers.find(
       (layer) =>
         layer.type === "symbol" && layer.layout?.["text-field"] != null,
     );
 
-    if (primeraCapaText) {
-      if (map.getLayer("terrain-hillshade")) {
-        map.moveLayer("terrain-hillshade", primeraCapaText.id);
-      }
+    // Ancoratge segons el zoom (veure ZOOM_DETALL): a zooms propers el
+    // ràster baixa fins a la posició inicial i tot el detall es dibuixa per
+    // damunt; a vista de conjunt es manté la posició intermèdia. Si
+    // l'estil canviés i l'àncora concreta desaparegués, es cau a la primera
+    // capa de text (posició inicial).
+    const anclaId =
+      map.getZoom() >= ZOOM_DETALL ? ANCLA_DETALL : ANCLA_GENERAL;
+    const anclaRaster =
+      layers.find((layer) => layer.id === anclaId) ?? primeraCapaText;
 
+    const indexDe = (id) => layers.findIndex((layer) => layer.id === id);
+    const iText = indexDe("contour-cotes");
+    const iHill = indexDe("terrain-hillshade");
+    const iRaster = indexDe("utci-raster-layer");
+    const iPrev = indexDe("utci-raster-prev-layer");
+    const iAncla = anclaRaster ? indexDe(anclaRaster.id) : -1;
+
+    // Ja està ordenat? Evita moure capes (i reubicar els símbols) a cada
+    // zoomend: els canvis només passen en afegir capes o en creuar el
+    // llindar de zoom.
+    const ordenat =
+      (iText === -1 || iHill < iText) &&
+      (iRaster === -1 || iHill < iRaster) &&
+      (iRaster === -1 || (iPrev === iRaster + 1 && iAncla === iPrev + 1));
+
+    if (ordenat) return;
+
+    // L'ombrejat del relleu es queda per sota de la primera capa de text i
+    // per sota del ràster.
+    if (map.getLayer("terrain-hillshade") && primeraCapaText) {
+      map.moveLayer("terrain-hillshade", primeraCapaText.id);
+    }
+
+    if (anclaRaster) {
       if (map.getLayer("utci-raster-layer")) {
-        map.moveLayer("utci-raster-layer", primeraCapaText.id);
+        map.moveLayer("utci-raster-layer", anclaRaster.id);
       }
 
       // La capa auxiliar queda a sobre: en fading deixa veure la nova.
       if (map.getLayer("utci-raster-prev-layer")) {
-        map.moveLayer("utci-raster-prev-layer", primeraCapaText.id);
+        map.moveLayer("utci-raster-prev-layer", anclaRaster.id);
       }
     }
   }
@@ -966,6 +1009,34 @@
     updateMarker(null);
   }
 
+  // Centre del mapa actual: prioritza els resultats del geocodificador
+  // propers a allò que l'usuari està veient.
+  function geocoderFocus() {
+    if (!map) return null;
+
+    const center = map.getCenter();
+    return { lat: center.lat, lng: center.lng };
+  }
+
+  // Selecciona un punt cercat amb el geocodificador: mateix flux que un clic
+  // al mapa (marker, municipi i panell de previsió) amb un acostament al
+  // resultat. Les adreces es mostren al carrer; els topònims, al municipi.
+  function selectGeocodedPoint(result) {
+    const point = { lng: result.lng, lat: result.lat };
+
+    selectedPoint = point;
+    updateMarker(point);
+    consultarMunicipi(point);
+
+    if (map) {
+      map.easeTo({
+        center: [point.lng, point.lat],
+        zoom: Math.max(map.getZoom(), result.layer === "address" ? 14 : 12),
+        duration: 700,
+      });
+    }
+  }
+
   // Els controls de MapLibre són en anglès per defecte: en traduïm les
   // etiquetes quan canvia l'idioma de l'aplicació.
   function updateControlLabels() {
@@ -1280,6 +1351,10 @@
       }
     });
 
+    // En creuar el llindar de zoom (ZOOM_DETALL) es reordena l'ancoratge del
+    // ràster; si l'ordre ja és el correcte, ordenarCapes() no fa res.
+    map.on("zoomend", ordenarCapes);
+
     map.on("click", (e) => {
       const point = {
         lng: e.lngLat.lng,
@@ -1347,20 +1422,37 @@
   class="app-shell flex h-dvh min-h-0 flex-col overflow-hidden bg-[#0b1118] text-slate-100"
 >
   <header
-    class="z-10 flex h-[62px] shrink-0 items-center justify-between border-b border-white/10 bg-[#101821] px-4 sm:px-6"
+    class="z-10 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2
+           border-b border-white/10 bg-[#101821] px-4 py-2
+           sm:h-[62px] sm:flex-nowrap sm:gap-x-6 sm:px-6 sm:py-0"
   >
-    <div>
-      <h1 class="text-base font-semibold">
+    <div class="min-w-0">
+      <h1 class="truncate text-base font-semibold">
         UTCI <span class="font-normal text-slate-400"
           >/ {language === "ca" ? "Catalunya" : "Catalonia"}</span
         >
       </h1>
-      <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+      <p
+        class="truncate text-[10px] uppercase tracking-[0.2em] text-slate-500"
+      >
         {tr("observatory")}
       </p>
     </div>
 
-    <div class="flex items-center gap-3 text-xs text-slate-400">
+    <!-- Cercador de punts: a la part central de la barra; en pantalles
+         petites ocupa una segona fila a tot l'ample perquè sigui
+         còmode d'usar amb el dit. -->
+    <div
+      class="order-3 w-full min-w-0 sm:order-none sm:w-auto sm:min-w-[200px] sm:max-w-md sm:flex-1"
+    >
+      <Geocoder
+        {language}
+        getFocus={geocoderFocus}
+        onSelect={selectGeocodedPoint}
+      />
+    </div>
+
+    <div class="flex shrink-0 items-center gap-3 text-xs text-slate-400">
       <div
         class="flex items-center rounded-lg border border-white/10 bg-[#0b1118] p-0.5"
         aria-label={language === "ca"

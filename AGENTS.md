@@ -35,6 +35,7 @@ App Svelte/Vite d'una sola pàgina. **Pràcticament tota la lògic viu a `src/Ap
 - `src/lib/PointPanel.svelte` — informació del punt + gràfica. Targeta flotant sobre el mapa a l'escriptori i full inferior al mòbil (el mateix component, dos posicionaments).
 - `src/lib/Chart.svelte` — gràfica de tota la previsió: línia colorejada segons el mode de representació (`displayMode`), àrea, separadors de dia, cursor del fotograma seleccionat. És un `role="slider"`: clic, ratolí i fletxes canvien el fotograma.
 - `src/lib/InfoPanel.svelte` — contingut informatiu sobre l'UTCI (acordió a l'escriptori, full al mòbil).
+- `src/lib/Geocoder.svelte` — cercador amb autocomplete a la navbar (API de geocodificador de l'ICGC, GeoJSON amb CORS `*`). Component presentacional en runes: rep `language`, `getFocus()` (centre del mapa, per prioritzar resultats propers) i `onSelect(result)`. Les curses es protegeixen amb `searchId` incremental + `AbortController`; el debounce és de 250 ms i mínim 2 caràcters. Patró **ARIA combobox**: el teclat (fletxes, Enter, Escape) es maneja al camp amb `aria-activedescendant`, no a cada opció; l'Escape amb la llista oberta **no es propaga** (el handler global d'`App.svelte` no tanca el panell del punt). En seleccionar, `App.svelte` reutilitza el flux d'un clic al mapa (`selectGeocodedPoint`).
 - `src/lib/resize.js` — acció `verticalResize`: arrossegar verticalment un panell inferior amb el punter (captura el punter, `touch-action: none` a la maneta).
 - `src/lib/utci-classes.js` — `classes` (amb `min`/`max`/`c`/`label`/`range`), `classLabels`, `rangeKeys`, `getClass(value)`, `colorForValue(value, displayMode)` (classe o rampa) i els ajudants `labelForClass(item, language)` / `rangeForClass(item, language)`. La rampa contínua (`rampStops`, `rampTicks`, `rampTickPercent()`, `rampColorForValue()`, `rampGradientCss()`) s'interpola linealment entre els punts mitjans de cada classe, amb domini clampat a [−40, 46].
 - `src/lib/time.js` — formatació de dates en `Europe/Madrid`: `formatWeekdayLong/Short`, `formatDayMonth`, `formatDateShort`, `formatTime`, `formatShortDateTime`, `formatFullDate`, `dayKey`, `relativeDayLabel`, `hoursBetween` i `firstVisibleIndex(items, now)`.
@@ -80,7 +81,7 @@ Si el darrer pas visible ja és passat, es mostra un avís (`forecastOutdated`).
 
 Ids de source/layer: `utci-raster-source`, `utci-raster-layer`, `utci-raster-prev-source`, `utci-raster-prev-layer`, `hillshadeSource`, `terrain-hillshade`.
 
-`ordenarCapes()` reordena sota l'estil base de l'ICGC: hillshade i ràster UTCI queden per sota de la primera capa de text. Espera l'event `idle` si l'estil no està carregat. Crida-la després d'afegir capes.
+`ordenarCapes()` reordena sota l'estil base de l'ICGC: l'ombrejat del relleu queda per sota de la primera capa de text (`contour-cotes`) i l'ancoratge del ràster UTCI **depèn del zoom** (`ZOOM_DETALL = 10`, a `App.svelte`): per sota de z10 és `tunnel-service-track-casing` (fons, usos del sòl, aigua i edificis tintats; xarxa viària, ferrocarrils, ponts, límits i totes les etiquetes per damunt) i a partir de z10 és `contour-cotes`, la **posició inicial** (tot el detall per damunt). Si l'estil no tingués l'àncora concreta, cau a la primera capa de text. Es crida en afegir capes, en l'event `zoomend` i després d'afegir el ràster; una guarda interna evita `moveLayer` si l'ordre ja és el correcte (així `zoomend` no reubica símbols innecessàriament). Espera l'event `idle` només si l'estil encara no té capes (càrrega inicial): no es pot fer servir `isStyleLoaded()` perquè es queda fals segons després d'un canvi de zoom (tiles pendents) i el reordenatge s'endarreria.
 
 - **Cross-fade**: hi ha una capa auxiliar (`utci-raster-prev-layer`) **per sobre** de la principal. `crossFadeRaster(prepared, from)` fa: la auxiliar carrega la imatge visible (amagada) → traspàs invisible (auxiliar a `RASTER_OPACITY`, principal a 0, en el mateix fotograma) → la principal rep la nova per sota → `animateRasterFade()` les fona amb `requestAnimationFrame` coordinant les dues opacitats perquè la cobertura total es mantingui constant (una baixada i pujada lineals duplicarien els colors i produirien un flaig fosc). `ensureRasterLayer` fixa `displayedPrepared` **abans** de llençar el fade: és la imatge d'origen del següent. La textura es puja de forma asíncrona: si no s'espera (`waitForSourceData`, que espera l'event `data` amb límit de 400 ms), es veu un fotograma vell parpellejant.
 - El punt seleccionat **ja no és una capa**: és un `maplibregl.Marker` HTML (`.selected-marker`) per poder fer la pols en CSS sense redibuixar el mapa.
@@ -104,6 +105,7 @@ Ids de source/layer: `utci-raster-source`, `utci-raster-layer`, `utci-raster-pre
 - El panell esquerre a l'escriptori és `clamp(300px, 23vw, 390px)`: creix amb la pantalla sense fer-ne massa, i en pantalles petites no es fa estreit.
 - El panell dret ja no existeix com a columna: la informació del punt és un **panell ancorat** a la cantonada superior dreta del mapa (`PointPanel.svelte`), amb alçada variable segons el contingut i l'estil del panell esquerre (recte, amb vora a l'esquerra). Els controls de MapLibre són a la cantonada inferior dreta, per sota del panell.
 - L'etiqueta de data sobre el mapa només apareix a partir de `xl`: a les pantalles petites el panell temporal de dalt ja la mostra i es sobreposava amb els botons de llegenda i info.
+- La navbar (`<header>` d'`App.svelte`) és de **fila única a partir de `sm`** amb el cercador al centre (`Geocoder`, flex1 amb `max-w-md`); per sota d'aquesta amplada es desdobla amb `flex-wrap` i el cercador ocupa una **segona fila a tot l'ample** (`order-3`), perquè sigui còmode d'usar amb el dit. L'input és de 16 px per evitar el zoom automàtic d'iOS.
 
 ## i18n
 
@@ -178,6 +180,7 @@ Cap dels dos forma part de `npm run build` i no s'executen automàticament.
 - Estil base ICGC: `https://geoserveis.icgc.cat/contextmaps/icgc_mapa_base_fosc.json`
 - DEM Mapterhorn per al relleu/ombrejat: `https://tiles.mapterhorn.com/tilejson.json`
 - API Territorial ICGC per consultar el municipi.
+- Geocodificador ICGC (autocomplete de la navbar): `https://eines.icgc.cat/geocodificador/autocompletar?text=…` (GeoJSON, CORS `*`; docs a `https://eines.icgc.cat/geocodificador/api-docs/`).
 - Beacon de Cloudflare Web Analytics a `index.html`.
 
 ## Atribució de les dades
