@@ -32,7 +32,7 @@ App Svelte/Vite d'una sola pàgina. **Pràcticament tota la lògic viu a `src/Ap
 - `src/lib/Timeline.svelte` — control temporal (capçalera de data, slider, tira de dies amb indicador lliscant). Component **presentacional**: rep `forecast`, `selectedHour`, `isPlaying` i callbacks (`onPrev`, `onNext`, `onTogglePlay`, `onSelectHour`). Té un **mode compact** propi (matchQuery `(max-width: 1279px)`) que comprimeix la capçalera i els controls per deixar més mapa a les pantalles petites.
 - `src/lib/Legend.svelte` — llegenda de l'escala UTCI, reutilitzada al panell lateral i als fulls mòbils. Tres branques: classes (`utci`), rampa contínua (`continuous`) i una branca morta (`{:else}`) que es manté intacta. El títol el posa el pare.
 - `src/lib/Sheet.svelte` — full inferior reutilitzable (backdrop, tirador, focus, Esc, animació d'entrada i sortida, redimensionat arrossegeant la maneta).
-- `src/lib/PointPanel.svelte` — informació del punt + gràfica. Targeta flotant sobre el mapa a l'escriptori i full inferior al mòbil (el mateix component, dos posicionaments).
+- `src/lib/PointPanel.svelte` — informació del punt + taula de variables del càlcul + gràfica. Targeta flotant sobre el mapa a l'escriptori i full inferior al mòbil (el mateix component, dos posicionaments). La taula (`VARIABLE_ROWS`) només es mostra si el manifest porta `diag_url` per al fotograma visible; rep les dades com a objecte `{nom_de_banda: valor}`.
 - `src/lib/Chart.svelte` — gràfica de tota la previsió: línia colorejada segons el mode de representació (`displayMode`), àrea, separadors de dia, cursor del fotograma seleccionat. És un `role="slider"`: clic, ratolí i fletxes canvien el fotograma.
 - `src/lib/InfoPanel.svelte` — contingut informatiu sobre l'UTCI (acordió a l'escriptori, full al mòbil).
 - `src/lib/Geocoder.svelte` — cercador amb autocomplete a la navbar (API de geocodificador de l'ICGC, GeoJSON amb CORS `*`). Component presentacional en runes: rep `language`, `getFocus()` (centre del mapa, per prioritzar resultats propers) i `onSelect(result)`. Les curses es protegeixen amb `searchId` incremental + `AbortController`; el debounce és de 250 ms i mínim 2 caràcters. Patró **ARIA combobox**: el teclat (fletxes, Enter, Escape) es maneja al camp amb `aria-activedescendant`, no a cada opció; l'Escape amb la llista oberta **no es propaga** (el handler global d'`App.svelte` no tanca el panell del punt). En seleccionar, `App.svelte` reutilitza el flux d'un clic al mapa (`selectGeocodedPoint`).
@@ -48,17 +48,18 @@ App Svelte/Vite d'una sola pàgina. **Pràcticament tota la lògic viu a `src/Ap
 Si cal afegir dades, el contracte és:
 
 - Manifest: `{ generated_at, count, files: [{ filename, url, valid_time }] }`. `url` és **relatiu** (`./data/...`) i es resol amb `new URL(path, document.baseURI)`; rutes absolutes trenquen el subdirectori de Pages. `App.svelte` accepta `path`/`href`/`filename` com a fallbacks i ordena per `valid_time`.
+- **Diagnòstic per punt** (opcional): cada entrada pot portar `diag_url` (`./data/diag_<ts>.tif`) i l'arrel pot portar `diag_bands` (ordre de bandes). El fitxer té una banda per variable (`t2m_used`, `t2m_raw`, `corr_total`, `wind`, `rh`, `mrt`, `shadow`) i comparteix graella amb l'UTCI del mateix timestamp. **El visor no el precarrega**: el demana per rangs (`geotiff.js` `fromUrl` + `readRasters({window, samples})`) quan l'usuari selecciona un punt. Sense `diag_url` la taula de variables no es mostra.
 - `forecast.json` es demana amb `cache: "no-store"`.
 
 ## Sistemes de coordenades
 
 - CRS de origen dels ràsters: **EPSG:25831** (ETRS89 / UTM 31N), registrat amb `proj4.defs` a l'inici de `App.svelte`. També se suporta EPSG:3857, escollit a partir del `ProjectedCSTypeGeoKey` del GeoTIFF.
-- `rasterCoordinates()` reprojecta les cantonades a EPSG:4326 per al source `image` de MapLibre; `sampleAt()` fa la transformació inversa per consultar un punt. **Si afegeix un CRS nou, registra'l amb proj4 i actualitza les dues funcions.**
+- `rasterCoordinates()` reprojecta les cantonades a EPSG:4326 per al source `image` de MapLibre; `pixelAt(lng, lat, grid)` fa la transformació inversa per treure el píxel d'una graella (la fan servir `sampleAt()` i la lectura del diagnòstic: els dos ràsters comparteixen graella, així que apunten al mateix píxel). **Si afegeix un CRS nou, registra'l amb proj4 i actualitza `rasterCoordinates()` i `pixelAt()`.**
 - L'API de municipis de l'ICGC espera UTM 31N `x,y` (un decimal), no lat/lng.
 
 ## Pipeline de ràsters (no el reordenis sense entendre'l)
 
-Tres caches indexades per URL: `rasterCache` (valors decodificats), `rasterImageCache` (object URLs de PNG), `rasterPreparationCache` (promeses en curs).
+Tres caches indexades per URL: `rasterCache` (valors decodificats), `rasterImageCache` (object URLs de PNG), `rasterPreparationCache` (promeses en curs). El diagnòstic té les seves: `diagTiffCache` (GeoTIFF oberts per URL, amb fallback a baixada completa si el servidor no admet range requests) i `diagSampleCache` (valors ja llegits, limitada a `DIAG_SAMPLE_LIMIT`).
 
 TIFF → valors → classificació per píxel → canvas → `toBlob` PNG → `URL.createObjectURL` → `source.updateImage()`. El nodata prové de l'etiqueta `GDAL_NODATA`; els píxels nodata es deixen amb alfa 0. Els píxels vàlids es bullen opacs (alfa 255): l'opacitat efectiva ve només de `raster-opacity` (`RASTER_OPACITY`).
 
@@ -69,7 +70,7 @@ TIFF → valors → classificació per píxel → canvas → `toBlob` PNG → `U
 
 ## Guards de cursa (async)
 
-Tota càrrega async usa un id incremental (`requestId`, `seriesRequestId`, `municipalityRequestId`, `fadeRequestId`) comprovat després de cada `await`, perquè una resposta obsoleta no sobreescrigui una selecció més nova. Segueix el mateix patró en qualsevol crida async nova.
+Tota càrrega async usa un id incremental (`requestId`, `seriesRequestId`, `municipalityRequestId`, `fadeRequestId`, `diagRequestId`) comprovat després de cada `await`, perquè una resposta obsoleta no sobreescrigui una selecció més nova. Segueix el mateix patró en qualsevol crida async nova.
 
 ## Previsió: què es mostra
 
@@ -156,7 +157,8 @@ Cap dels dos forma part de `npm run build` i no s'executen automàticament.
 - `public/favicon.svg` **es construeix**, no es dibuixa a mà: `node tools/generate-favicon.mjs` calcula la geometria (els 8 raigs del sol, repartits regularment al voltant del disc). Si cal canviar colors o proporcions, edita les constants de la capeta del script i torna a executar-lo.
 - Els icones PNG es generen amb `node tools/generate-icons.mjs` a partir del SVG (requereix Chrome; els PNG ja estan versionats, així que la compilació no en depèn). L'eina genera tres variants: quadrada (fons opac ple), *maskable* (el dibuix escalat al 72 % a la zona segura) i `apple-touch-icon`.
 - `node tools/check-icons.mjs` verifica que els PNG no tenen el dibuix tallat i que el fons és opac.
-- **No es posen a la memòria cau els recursos de tercers** (estil base de l'ICGC, relleu, API): no es redistribueixen dades d'altres. Els ràsters `.tif` sí (són immutables) i se'n conserven els 12 darrers.
+- **No es posen a la memòria cau els recursos de tercers** (estil base de l'ICGC, relleu, API): no es redistribueixen dades d'altres. Els ràsters `.tif` d'UTCI sí (són immutables) i se'n conserven els 12 darrers.
+- **Les peticions amb capçalera `Range` passen de llarg** (sense `respondWith`): la memòria cau només emmagatzema respostes completes i les lectures parcials del diagnòstic no hi caben. Els `diag_*.tif` també passen de llarg: els gestiona el visor amb cache pròpia, així que no competeixen amb els UTCI que sí que es guarden per funcionar sense connexió.
 
 ## iOS: àrees segures
 

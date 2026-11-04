@@ -8,6 +8,7 @@
   let {
     open = false,
     point = null,
+    toponym = "",
     municipality = "",
     loadingMunicipality = false,
     municipalityError = "",
@@ -15,6 +16,9 @@
     series = [],
     selectedHour = 0,
     loadingSeries = false,
+    variables = null,
+    loadingVariables = false,
+    variablesAvailable = false,
     language = "ca",
     displayMode = "utci",
     closeLabel = "Close",
@@ -24,6 +28,77 @@
   } = $props();
 
   const MIN_HEIGHT = 200;
+
+  // Variables que arriben com a objecte {nom_de_banda: valor} des
+  // d'App.svelte. Les agrupem segons el paper que tenen en el procés per
+  // fer més llegible d'on surt el valor UTCI final.
+  const ORIGINAL_ROWS = [
+    { key: "t2m_raw", labelKey: "varT2mRaw", digits: 1, unit: "°C" },
+    {
+      key: "corr_total",
+      labelKey: "varCorrTotal",
+      digits: 1,
+      unit: "°C",
+      signed: true,
+    },
+  ];
+
+  const USED_ROWS = [
+    { key: "t2m_used", labelKey: "varT2mUsed", digits: 1, unit: "°C" },
+    { key: "wind", labelKey: "varWind", digits: 1, unit: "m/s" },
+    { key: "rh", labelKey: "varRh", digits: 0, unit: "%" },
+    { key: "mrt", labelKey: "varMrt", digits: 1, unit: "°C" },
+    { key: "shadow", labelKey: "varShadow", percent: true },
+  ];
+
+  function formatVariable(row, raw) {
+    // null vol dir "banda sense valor" (fora del domini o pendent).
+    if (raw == null) return "—";
+
+    const value = Number(raw);
+
+    if (!Number.isFinite(value)) return "—";
+
+    // L'ombra es publica com a fracció del píxel amb ombra.
+    if (row.percent) return `${Math.round(value * 100)} %`;
+
+    let sign = "";
+
+    if (row.signed && value > 0) sign = "+";
+    else if (value < 0) sign = "−";
+
+    return `${sign}${Math.abs(value).toFixed(row.digits)} ${row.unit}`;
+  }
+
+  function formatDifference(raw) {
+    if (raw == null || !Number.isFinite(Number(raw))) return "—";
+
+    const value = Number(raw);
+    const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+
+    return `${sign}${Math.abs(value).toFixed(1)} °C`;
+  }
+
+  function numericValue(raw) {
+    if (raw == null || !Number.isFinite(Number(raw))) return null;
+
+    return Number(raw);
+  }
+
+  // Són diferències descriptives entre valors observats. No són una
+  // descomposició causal de l'UTCI, que es calcula amb una funció no lineal.
+  const airTemperatureDifference = $derived(
+    numericValue(variables?.t2m_used) !== null &&
+      numericValue(variables?.t2m_raw) !== null
+      ? numericValue(variables.t2m_used) - numericValue(variables.t2m_raw)
+      : null,
+  );
+
+  const utciAirTemperatureDifference = $derived(
+    value?.value != null && numericValue(variables?.t2m_used) !== null
+      ? Number(value.value) - numericValue(variables.t2m_used)
+      : null,
+  );
 
   let panelElement = $state(null);
   let sheetHeight = $state(null);
@@ -117,25 +192,36 @@
 
   <div class="flex items-start justify-between gap-3 px-4 pt-3 xl:pt-4">
     <div class="min-w-0">
-      <p class="text-[10px] uppercase tracking-widest text-slate-500">
-        {translate("municipality", language)}
-      </p>
-
-      {#if loadingMunicipality}
-        <p class="mt-1 text-sm text-slate-400">
-          {translate("queryingMunicipality", language)}
+      {#if toponym}
+        <p class="text-[10px] uppercase tracking-widest text-slate-500">
+          {translate("toponym", language)}
         </p>
-      {:else if municipality}
         <p class="mt-1 truncate text-sm font-semibold text-teal-200">
-          {municipality}
+          {toponym}
         </p>
-      {:else if municipalityError}
-        <p class="mt-1 text-xs text-amber-300">
-          {translate(municipalityError, language)}
-        </p>
-      {:else}
-        <p class="mt-1 text-sm text-slate-400">—</p>
       {/if}
+
+      <div class:mt-2={!!toponym}>
+        <p class="text-[10px] uppercase tracking-widest text-slate-500">
+          {translate("municipality", language)}
+        </p>
+
+        {#if loadingMunicipality}
+          <p class="mt-1 text-sm text-slate-400">
+            {translate("queryingPlace", language)}
+          </p>
+        {:else if municipality}
+          <p class="mt-1 truncate text-xs font-medium text-slate-300">
+            {municipality}
+          </p>
+        {:else if municipalityError}
+          <p class="mt-1 text-xs text-amber-300">
+            {translate(municipalityError, language)}
+          </p>
+        {:else}
+          <p class="mt-1 text-sm text-slate-400">—</p>
+        {/if}
+      </div>
     </div>
 
     <button
@@ -188,7 +274,8 @@
       </div>
     </div>
 
-    <div class="mt-2 px-4 pb-4">
+    <!-- Evolució temporal: és la primera lectura després de la ubicació. -->
+    <div class="mt-2 px-4">
       <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
         <div class="mb-2 flex items-center justify-between gap-2">
           <h3
@@ -214,6 +301,124 @@
         />
       </div>
     </div>
+
+    <!-- Variables que entren al càlcul, per al fotograma visible. -->
+    {#if variablesAvailable}
+      <div class="mt-2 px-4 pb-4">
+        <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h3
+              class="text-[11px] font-semibold uppercase tracking-widest text-slate-400"
+            >
+              {translate("calculationTitle", language)}
+            </h3>
+
+            {#if loadingVariables}
+              <span class="text-[10px] text-amber-300">
+                {translate("calculating", language)}
+              </span>
+            {/if}
+          </div>
+
+          <p class="mb-3 text-[11px] leading-relaxed text-slate-400">
+            {translate("calculationIntro", language)}
+          </p>
+
+          <div class="space-y-3">
+            <section>
+              <h4
+                class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+              >
+                {translate("originalData", language)}
+              </h4>
+
+              <dl class="space-y-1">
+                {#each ORIGINAL_ROWS as row (row.key)}
+                  <div
+                    class="flex items-baseline justify-between gap-3 border-b border-white/5 pb-1 last:border-0 last:pb-0"
+                  >
+                    <dt class="text-[11px] leading-tight text-slate-400">
+                      {translate(row.labelKey, language)}
+                    </dt>
+
+                    <dd
+                      class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                    >
+                      {formatVariable(row, variables?.[row.key])}
+                    </dd>
+                  </div>
+                {/each}
+              </dl>
+            </section>
+
+            <section>
+              <h4
+                class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+              >
+                {translate("usedData", language)}
+              </h4>
+
+              <dl class="space-y-1">
+                {#each USED_ROWS as row (row.key)}
+                  <div
+                    class="flex items-baseline justify-between gap-3 border-b border-white/5 pb-1 last:border-0 last:pb-0"
+                  >
+                    <dt class="text-[11px] leading-tight text-slate-400">
+                      {translate(row.labelKey, language)}
+                    </dt>
+
+                    <dd
+                      class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                    >
+                      {formatVariable(row, variables?.[row.key])}
+                    </dd>
+                  </div>
+                {/each}
+              </dl>
+            </section>
+
+            <section class="border-t border-white/10 pt-2">
+              <h4
+                class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+              >
+                {translate("comparisonsTitle", language)}
+              </h4>
+
+              <dl class="space-y-1">
+                <div class="flex items-baseline justify-between gap-3">
+                  <dt class="text-[11px] leading-tight text-slate-400">
+                    {translate("airTemperatureDifference", language)}
+                  </dt>
+                  <dd
+                    class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                  >
+                    {formatDifference(airTemperatureDifference)}
+                  </dd>
+                </div>
+
+                {#if value}
+                  <div class="flex items-baseline justify-between gap-3">
+                    <dt class="text-[11px] leading-tight text-slate-400">
+                      {translate("utciAirTemperatureDifference", language)}
+                    </dt>
+                    <dd
+                      class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                    >
+                      {formatDifference(utciAirTemperatureDifference)}
+                    </dd>
+                  </div>
+                {/if}
+              </dl>
+
+              <p class="mt-2 text-[10px] leading-relaxed text-slate-500">
+                {translate("calculationNote", language)}
+              </p>
+            </section>
+          </div>
+        </div>
+      </div>
+    {/if}
+
   {/if}
 </div>
 

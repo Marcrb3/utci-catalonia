@@ -8,6 +8,9 @@
 //   · Navegació i forecast.json → xarxa primer, memòria cau de reserva.
 //   · Ràsters .tif            → memòria cau primer (el nom porta la
 //     marca de temps, així que són immutables).
+//   · range requests i diag_*.tif → xarxa directa (les lectures
+//     parcials no caben a la memòria cau; el diagnòstic per punt el
+//     gestiona el visor amb cache pròpia).
 //   · Recursos de l'aplicació  → memòria cau primer.
 //   · Terceres parts           → sense memòria cau (estil base de l'ICGC,
 //     relleu i API): no es redistribueixen les dades d'altres.
@@ -108,6 +111,18 @@ self.addEventListener("fetch", (event) => {
 
   // El service worker el gestiona el navegador: no el posem a la memòria cau.
   if (url.pathname.endsWith("/sw.js")) return;
+
+  // Petició parcial (range request): es deixa passar a la xarxa. La
+  // memòria cau només emmagatzema respostes completes, i el lector
+  // de GeoTIFF (geotiff.js) demana per rangs els tiles que toquen un
+  // píxel en lloc de baixar el fitxer sencer.
+  if (request.headers.has("Range")) return;
+
+  // Diagnòstic per punt (diag_*.tif): el gestiona el visor amb la
+  // seva pròpia cache i lectures per rangs. Fora de la memòria cau
+  // del worker per no competir amb els ràsters UTCI que sí que es
+  // necessiten complets (i sense connexió).
+  if (url.pathname.includes("/data/diag_")) return;
 
   // Navegació: xarxa primer per als despliegaments nous.
   if (request.mode === "navigate") {

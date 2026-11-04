@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from "svelte";
   import * as maplibregl from "maplibre-gl";
-  import { fromArrayBuffer } from "geotiff";
+  import { fromArrayBuffer, fromUrl } from "geotiff";
   import proj4 from "proj4";
   import { translations } from "./dictionary.js";
   import Timeline from "./lib/Timeline.svelte";
@@ -41,6 +41,7 @@
   let displayMode = "utci";
   let selectedHour = 0;
   let selectedPoint = null;
+  let selectedToponym = "";
   let showMobileLegend = false;
   let showInfoSheet = false;
   let infoOpen = false;
@@ -106,6 +107,40 @@
   let seriesPointKey = null;
   let pointSeries = [];
 
+  // ------------------------------------------------------------
+  // DIAGNÒSTIC PER PUNT
+  // ------------------------------------------------------------
+  //
+  // Les variables que entren a l'UTCI (T usada, T d'ECMWF, correcció,
+  // vent, humitat, Tmrt i ombra) viuen en un raster a part per a
+  // cada fotograma (diag_<ts>.tif), amb una banda per variable. No
+  // es precarreguen: geotiff.js el consulta per rang quan l'usuari
+  // selecciona un punt, així que la càrrega del mapa no s'alenteix.
+
+  // Ordre de bandes per defecte; forecast.json el pot precisar amb
+  // "diag_bands" (el escriu run_pipeline.py a partir de les
+  // descripció de banda dels GeoTIFF).
+  const DEFAULT_DIAG_BANDS = [
+    "t2m_used",
+    "t2m_raw",
+    "corr_total",
+    "wind",
+    "rh",
+    "mrt",
+    "shadow",
+  ];
+
+  let diagBands = DEFAULT_DIAG_BANDS;
+  let diagTiffCache = new Map(); // TIFF oberts, per URL
+  let diagSampleCache = new Map(); // valors llegits, per píxel
+  let diagRequestId = 0;
+  let diagValues = null;
+  let loadingDiag = false;
+
+  // Límit de la cache de mostres: cada entrada és un objecte petit,
+  // però un llarg recorregut pel mapa no ha de créixer sense límit.
+  const DIAG_SAMPLE_LIMIT = 500;
+
   let forecastOutdated = false;
 
   $: if (language) {
@@ -167,6 +202,23 @@
     seriesPointKey = null;
     pointSeries = [];
     loadingSeries = false;
+  }
+
+  // El manifest només duu diag_url si el pipeline ha generat els
+  // rasters de diagnòstic; sense ells, el panell amaga la taula.
+  $: diagAvailable = !!(
+    activeForecast?.diag_url || activeForecast?.diagUrl
+  );
+
+  // La taula de variables cobreix el fotograma visible: es torna a
+  // consultar en canviar de punt o d'hora (la cache evita tornar a
+  // demanar un píxel ja llegit).
+  $: if (selectedPoint && diagAvailable && activeForecast) {
+    updateDiagValues(selectedPoint, activeForecast);
+  } else {
+    diagRequestId += 1;
+    diagValues = null;
+    loadingDiag = false;
   }
 
   function hexRgb(hex) {
@@ -789,12 +841,16 @@
     }
   }
 
-  function sampleAt(lng, lat, raster = currentRaster) {
-    if (!raster) return null;
+  // Píxel d'una graella que toca una coordenada. La mateixa graella
+  // (bbox, amplada, alçada i CRS) serveix tant per al raster UTCI
+  // com per al de diagnòstic: comparteixen graella, així que ambdós
+  // apunten al mateix píxel.
+  function pixelAt(lng, lat, grid) {
+    if (!grid) return null;
 
-    const sourceCrs = raster.epsg === 3857 ? "EPSG:3857" : "EPSG:25831";
+    const sourceCrs = grid.epsg === 3857 ? "EPSG:3857" : "EPSG:25831";
     const [xMap, yMap] = proj4("EPSG:4326", sourceCrs, [lng, lat]);
-    const [west, south, east, north] = raster.bbox;
+    const [west, south, east, north] = grid.bbox;
 
     if (xMap < west || xMap > east || yMap < south || yMap > north) {
       return null;
@@ -803,20 +859,30 @@
     const x = Math.max(
       0,
       Math.min(
-        raster.width - 1,
-        Math.floor(((xMap - west) / (east - west)) * raster.width),
+        grid.width - 1,
+        Math.floor(((xMap - west) / (east - west)) * grid.width),
       ),
     );
 
     const y = Math.max(
       0,
       Math.min(
-        raster.height - 1,
-        Math.floor(((north - yMap) / (north - south)) * raster.height),
+        grid.height - 1,
+        Math.floor(((north - yMap) / (north - south)) * grid.height),
       ),
     );
 
-    const value = Number(raster.values[y * raster.width + x]);
+    return { x, y };
+  }
+
+  function sampleAt(lng, lat, raster = currentRaster) {
+    if (!raster) return null;
+
+    const pixel = pixelAt(lng, lat, raster);
+
+    if (!pixel) return null;
+
+    const value = Number(raster.values[pixel.y * raster.width + pixel.x]);
 
     if (
       !Number.isFinite(value) ||
@@ -835,11 +901,144 @@
     };
   }
 
-  // L'API Territorial pot retornar, en punts que no cauen a cap municipi,
-  // textos que no són noms (per exemple la marca de temps de la consulta:
-  // "2026-10-22T13:15:00.792601+02:00"). Només acceptem textos que
-  // semblin un nom de municipi real.
-  const NOT_A_MUNICIPALITY = new Set([
+  // ------------------------------------------------------------
+  // LECTURA DEL DIAGNÒSTIC
+  // ------------------------------------------------------------
+
+  // Obre un TIFF remot per rang (geotiff.js): només es baixen les
+  // capçaleres i, després, els tiles que toquen el píxel consultat.
+  // Si el servidor no admet range requests, es baixa el fitxer sencer
+  // una sola vegada i les lectures següents ja són locals.
+  async function openDiagTiff(url) {
+    if (diagTiffCache.has(url)) return diagTiffCache.get(url);
+
+    const promise = (async () => {
+      try {
+        const tiff = await fromUrl(url);
+
+        // Aquesta línia ja fa una petició: si el servidor torna el
+        // fitxer sencer en lloc d'un rang, falla aquí i passem a la
+        // baixada completa.
+        await tiff.getImage();
+
+        return tiff;
+      } catch (error) {
+        console.warn(
+          "Sense range requests; es baixa el diagnòstic sencer:",
+          url,
+          error,
+        );
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(
+            `No s'ha pogut carregar el diagnòstic (${response.status}): ${url}`,
+          );
+        }
+
+        return fromArrayBuffer(await response.arrayBuffer());
+      }
+    })();
+
+    diagTiffCache.set(url, promise);
+
+    try {
+      const tiff = await promise;
+      diagTiffCache.set(url, tiff);
+      return tiff;
+    } catch (error) {
+      diagTiffCache.delete(url);
+      throw error;
+    }
+  }
+
+  // Llegeix totes les bandes d'un sol píxel. Amb window d'un píxel,
+  // geotiff.js només demana els tiles que el contenen.
+  async function readDiagPixel(tiff, x, y) {
+    const image = await tiff.getImage();
+    const width = image.getWidth();
+    const height = image.getHeight();
+
+    const bands = await image.readRasters({
+      window: [x, y, Math.min(x + 1, width), Math.min(y + 1, height)],
+      samples: diagBands.map((_, index) => index),
+    });
+
+    if (!Array.isArray(bands) || bands.length !== diagBands.length) {
+      throw new Error(
+        `El diagnòstic té ${bands?.length ?? "?"} bandes i se n'esperaven ${diagBands.length}.`,
+      );
+    }
+
+    return Object.fromEntries(
+      diagBands.map((name, index) => [name, Number(bands[index][0])]),
+    );
+  }
+
+  // Valors de les variables per al punt i el fotograma seleccionats.
+  async function updateDiagValues(point, item) {
+    const url = item.diag_url ?? item.diagUrl ?? null;
+    const id = ++diagRequestId;
+
+    if (!url) {
+      diagValues = null;
+      loadingDiag = false;
+      return;
+    }
+
+    loadingDiag = true;
+    diagValues = null;
+
+    try {
+      const absoluteUrl = new URL(url, document.baseURI).href;
+      const cacheKey = `${absoluteUrl}|${point.lng},${point.lat}`;
+
+      if (diagSampleCache.has(cacheKey)) {
+        if (id !== diagRequestId || destroyed) return;
+        diagValues = diagSampleCache.get(cacheKey);
+        return;
+      }
+
+      const tiff = await openDiagTiff(absoluteUrl);
+      const image = await tiff.getImage();
+
+      const grid = {
+        bbox: image.getBoundingBox(),
+        width: image.getWidth(),
+        height: image.getHeight(),
+        epsg: Number(image.getGeoKeys()?.ProjectedCSTypeGeoKey),
+      };
+
+      const pixel = pixelAt(point.lng, point.lat, grid);
+
+      if (id !== diagRequestId || destroyed) return;
+
+      // Punt fora del domini: sense diagnòstic (les files queden en "—").
+      if (!pixel) return;
+
+      const values = await readDiagPixel(tiff, pixel.x, pixel.y);
+
+      if (id !== diagRequestId || destroyed) return;
+
+      if (diagSampleCache.size >= DIAG_SAMPLE_LIMIT) {
+        diagSampleCache.clear();
+      }
+
+      diagSampleCache.set(cacheKey, values);
+      diagValues = values;
+    } catch (error) {
+      console.error("No s'han pogut llegir les variables del punt:", error);
+
+      if (id === diagRequestId && !destroyed) diagValues = null;
+    } finally {
+      if (id === diagRequestId && !destroyed) loadingDiag = false;
+    }
+  }
+
+  // El geocoder invers de l'ICGC pot retornar, en punts sense resultat,
+  // textos tècnics o cap feature. Només acceptem noms plausibles.
+  const NOT_A_PLACE_NAME = new Set([
     "FeatureCollection",
     "Feature",
     "MultiPolygon",
@@ -852,7 +1051,7 @@
     "undefined",
   ]);
 
-  function isPlausibleMunicipality(text) {
+  function isPlausiblePlaceName(text) {
     if (typeof text !== "string") return false;
 
     const value = text.trim();
@@ -863,7 +1062,7 @@
     if (/\d{4}-\d{2}-\d{2}/.test(value)) return false;
 
     // Tipus de GeoJSON o altres valors tècnics.
-    if (NOT_A_MUNICIPALITY.has(value)) return false;
+    if (NOT_A_PLACE_NAME.has(value)) return false;
 
     // Ha de contenir alguna lletra.
     if (!/\p{L}/u.test(value)) return false;
@@ -871,26 +1070,49 @@
     return true;
   }
 
-  async function consultarMunicipi(point) {
+  const REVERSE_GEOCODER_URL =
+    "https://eines.icgc.cat/geocodificador/invers";
+  const REVERSE_GEOCODER_LAYERS = "topo1,topo2,address,pk";
+
+  function featureLayerRank(feature) {
+    const layer = feature?.properties?.layer;
+
+    return {
+      topo1: 0,
+      topo2: 1,
+      address: 2,
+      pk: 3,
+    }[layer] ?? 99;
+  }
+
+  function placeNameFromFeature(feature) {
+    const properties = feature?.properties ?? {};
+
+    return [properties.nom, properties.etiqueta].find(isPlausiblePlaceName) ?? "";
+  }
+
+  async function consultarLloc(point) {
     const id = ++municipalityRequestId;
 
+    selectedToponym = "";
     selectedMunicipality = "";
     municipalityError = "";
     loadingMunicipality = true;
 
     try {
-      // El servei d'elements de l'API Territorial espera UTM 31N.
-      const [x, y] = proj4("EPSG:4326", "EPSG:25831", [point.lng, point.lat]);
+      const params = new URLSearchParams({
+        lat: point.lat.toFixed(6),
+        lon: point.lng.toFixed(6),
+        layers: REVERSE_GEOCODER_LAYERS,
+        size: "1",
+      });
 
-      const url =
-        `https://api.icgc.cat/territorial/elements/municipis/` +
-        `${x.toFixed(1)},${y.toFixed(1)}`;
+      const url = `${REVERSE_GEOCODER_URL}?${params}`;
 
       const response = await fetch(url);
 
       if (!response.ok) {
-        // Un 4xx significa que el punt no cau a cap municipi (fora del
-        // territori de l'API): no és un error, sinó que no hi ha dades.
+        // Un 4xx significa que el punt no té cap resultat geocodificable.
         if (response.status >= 400 && response.status < 500) {
           if (id === municipalityRequestId) {
             selectedMunicipality = "";
@@ -908,21 +1130,9 @@
       // Evita que una resposta antiga sobreescrigui el darrer clic.
       if (id !== municipalityRequestId) return;
 
-      // Accepta els formats habituals de resposta GeoJSON/API.
-      const features = Array.isArray(data?.features)
-        ? data.features
-        : Array.isArray(data)
-          ? data
-          : data?.feature
-            ? [data.feature]
-            : [];
+      const features = Array.isArray(data?.features) ? data.features : [];
 
-      const feature = features[0];
-
-      // Sense cap feature no hi ha municipi: el punt cau fora del territori
-      // de l'API (no s'ha de llegir res de l'objecte arrel, que conté
-      // camps com "timeStamp" o "type" que no són noms de municipi).
-      if (!feature) {
+      if (!features.length) {
         if (id === municipalityRequestId) {
           selectedMunicipality = "";
           municipalityError = "pointNoData";
@@ -931,33 +1141,25 @@
         return;
       }
 
-      const properties = feature.properties ?? feature;
+      // El mateix resultat ja porta el topònim i el municipi. Prioritzem
+      // topo1 i topo2 abans que una adreça o un punt quilomètric.
+      const placeFeature = [...features]
+        .filter((feature) => placeNameFromFeature(feature))
+        .sort((a, b) => featureLayerRank(a) - featureLayerRank(b))[0];
 
-      const nameKeys = ["NOMMUNI", "CAPMUNI", "NOM", "name", "NAME", "MUNICIPI"];
-
-      const nameKey = nameKeys.find((key) =>
-        isPlausibleMunicipality(properties[key]),
+      const municipalityFeature = features.find((feature) =>
+        isPlausiblePlaceName(feature?.properties?.municipi),
       );
 
-      if (nameKey) {
-        selectedMunicipality = properties[nameKey].trim();
-      } else {
-        // Alguns serveis retornen les dades de la capa amb altres noms de
-        // camp: agafem el primer text que sembli un nom de municipi.
-        const fallback = Object.values(properties).find((value) =>
-          isPlausibleMunicipality(value),
-        );
+      selectedToponym = placeNameFromFeature(placeFeature);
+      selectedMunicipality =
+        municipalityFeature?.properties?.municipi?.trim() ?? "";
 
-        selectedMunicipality = fallback?.trim() ?? "";
-      }
-
-      if (!selectedMunicipality) {
-        // Cap municipi vàlid: el punt probablement és fora de Catalunya o
-        // fora de la malla de dades.
+      if (!selectedToponym && !selectedMunicipality) {
         municipalityError = "pointNoData";
       }
     } catch (error) {
-      console.error("Error consultant el municipi:", error);
+      console.error("Error consultant el lloc:", error);
 
       if (id === municipalityRequestId) {
         municipalityError = "municipalityError";
@@ -1006,6 +1208,7 @@
 
   function closePointPanel() {
     selectedPoint = null;
+    selectedToponym = "";
     updateMarker(null);
   }
 
@@ -1026,7 +1229,7 @@
 
     selectedPoint = point;
     updateMarker(point);
-    consultarMunicipi(point);
+    consultarLloc(point);
 
     if (map) {
       map.easeTo({
@@ -1277,8 +1480,9 @@
       const point = { lng: event.lngLat.lng, lat: event.lngLat.lat };
 
       selectedPoint = point;
+      selectedToponym = "";
       updateMarker(point);
-      consultarMunicipi(point);
+      consultarLloc(point);
 
       map.easeTo({
         center: event.lngLat,
@@ -1312,6 +1516,13 @@
 
         const json = await response.json();
         const entries = Array.isArray(json) ? json : json.files;
+
+        // Ordre de bandes dels rasters de diagnòstic. El visor manté
+        // el seu ordre per defecte si el manifest no el porta (és el
+        // cas dels manifests generats abans d'introduir el diag_).
+        if (Array.isArray(json?.diag_bands) && json.diag_bands.length) {
+          diagBands = json.diag_bands;
+        }
 
         if (!Array.isArray(entries) || !entries.length) {
           throw new Error("forecast.json no conté fitxers a «files».");
@@ -1362,8 +1573,9 @@
       };
 
       selectedPoint = point;
+      selectedToponym = "";
       updateMarker(point);
-      consultarMunicipi(point);
+      consultarLloc(point);
     });
 
     map.on("error", (e) => {
@@ -1382,6 +1594,7 @@
       requestId += 1;
       seriesRequestId += 1;
       municipalityRequestId += 1;
+      diagRequestId += 1;
 
       resizeObserver?.disconnect();
       window.removeEventListener("keydown", handleKeydown);
@@ -1396,6 +1609,8 @@
       rasterImageCache.clear();
       rasterCache.clear();
       rasterPreparationCache.clear();
+      diagTiffCache.clear();
+      diagSampleCache.clear();
 
       map?.remove();
     };
@@ -1738,6 +1953,7 @@
       <PointPanel
         open={!!selectedPoint}
         point={selectedPoint}
+        toponym={selectedToponym}
         municipality={selectedMunicipality}
         {loadingMunicipality}
         {municipalityError}
@@ -1745,6 +1961,9 @@
         series={pointSeries}
         selectedHour={Number(selectedHour)}
         {loadingSeries}
+        variables={diagValues}
+        loadingVariables={loadingDiag}
+        variablesAvailable={diagAvailable}
         {language}
         {displayMode}
         closeLabel={tr("close")}

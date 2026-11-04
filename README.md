@@ -131,7 +131,7 @@ src/
     Timeline.svelte       control temporal (slider, tira de dies, reproducció)
     Legend.svelte         llegenda de l'escala UTCI
     Chart.svelte          gràfica de tota la previsió
-    PointPanel.svelte     informació del punt (calaix flotant / full inferior)
+    PointPanel.svelte     informació del punt, variables del càlcul i gràfica
     InfoPanel.svelte      contingut informatiu sobre l'UTCI
     Sheet.svelte          full inferior reutilitzable (redimensionable)
     resize.js             acció d'arrossegar per redimensionar un panell
@@ -157,10 +157,12 @@ El visor utilitza un manifest de previsions, `public/data/forecast.json`, i els 
 {
   "generated_at": "2026-10-22T05:42:50Z",
   "count": 29,
+  "diag_bands": ["t2m_used", "t2m_raw", "corr_total", "wind", "rh", "mrt", "shadow"],
   "files": [
     {
       "filename": "utci_2026-10-22T06-00-00.000000000.tif",
       "url": "./data/utci_2026-10-22T06-00-00.000000000.tif",
+      "diag_url": "./data/diag_2026-10-22T06-00-00.000000000.tif",
       "valid_time": "2026-10-22T06:00:00.000000000Z"
     }
   ]
@@ -173,6 +175,7 @@ Regles que cal respectar:
 - L’aplicació accepta `path`, `href` i `filename` com a alternatives a `url`, i ordena les entrades per `valid_time`.
 - `forecast.json` es demana amb `cache: "no-store"`; el service worker el serveix de la memòria cau si no hi ha connexió.
 - Els fitxers de dades **no es toquen** des del codi: es generen amb un script extern.
+- **Diagnòstic per punt** (opcional): `diag_bands` (arrel) i `diag_url` (per entrada) descriuen un GeoTIFF amb les variables que entren a l'UTCI, banda a banda, per al mateix píxel i fotograma. El visor el demana **per rangs** només quan selecciones un punt (`geotiff.js` `fromUrl` + `readRasters` d'un píxel), així que no allarga la càrrega del mapa ni la dels ràsters UTCI. Si el manifest no els porta, el panell del punt no mostra la taula de variables.
 
 ### Passos de previsió
 
@@ -195,7 +198,8 @@ L’aplicació és instal·lable i funciona sense connexió.
 - **Service worker** (`dist/sw.js`, generat per `build/service-worker.js` amb el plugin de `vite.config.js`):
   - **precàrrega** de l’aplicació (HTML, JS, CSS, icones) en la instal·lació;
   - **xarxa primer** per a la navegació i per a `forecast.json`, amb còpia local de reserva;
-  - **memòria cau primer** per als ràsters `.tif`, que són immutables (el nom hi porta la marca de temps). Se’n conserven els 12 darrers;
+  - **memòria cau primer** per als ràsters `.tif` d’UTCI, que són immutables (el nom hi porta la marca de temps). Se’n conserven els 12 darrers;
+  - **xarxa directa** per a les peticions amb capçalera `Range` (les lectures parcials no caben a la memòria cau) i per als `diag_*.tif`, que gestiona el visor amb cache pròpia;
   - **cap memòria cau** per als recursos de tercers (estil base de l’ICGC, relleu, API): no es redistribueixen dades d’altres.
 - El registre només es fa en producció (`import.meta.env.PROD`), per no interferir amb el recàrrega en calent de Vite.
 - La versió de la memòria cau és un hash dels noms de fitxer: en publicar una versió nova, la memòria cau antiga s'esborra sola.
