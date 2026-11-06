@@ -10,7 +10,9 @@
   import PointPanel from "./lib/PointPanel.svelte";
   import InfoPanel from "./lib/InfoPanel.svelte";
   import Geocoder from "./lib/Geocoder.svelte";
+  import ForecastDetail from "./lib/ForecastDetail.svelte";
   import { classes, labelForClass, getClass, colorForValue, rampGradientCss } from "./lib/utci-classes.js";
+  import { referenceCities } from "./lib/cities.js";
   import {
     formatTime,
     formatWeekdayShort,
@@ -32,6 +34,8 @@
 
   let mapContainer, map, resizeObserver;
   let language = "ca";
+  // Vista actual de l'app: mapa o pàgina de detall del punt (sense mapa).
+  let view = "map";
   // In legacy Svelte reactivity, make the translator itself reactive.
   // This invalidates every {tr("...")} expression when language changes.
   $: tr = (key) => translations[language]?.[key] ?? translations.ca[key] ?? key;
@@ -1215,6 +1219,11 @@
   // Centre del mapa actual: prioritza els resultats del geocodificador
   // propers a allò que l'usuari està veient.
   function geocoderFocus() {
+    if (view === "detail") {
+      if (selectedPoint) return { lat: selectedPoint.lat, lng: selectedPoint.lng };
+      return null;
+    }
+
     if (!map) return null;
 
     const center = map.getCenter();
@@ -1231,12 +1240,33 @@
     updateMarker(point);
     consultarLloc(point);
 
-    if (map) {
+    if (map && view === "map") {
       map.easeTo({
         center: [point.lng, point.lat],
         zoom: Math.max(map.getZoom(), result.layer === "address" ? 14 : 12),
         duration: 700,
       });
+    }
+  }
+
+  // Selecciona una ciutat de la llista de referència: mateix punt que un
+  // resultat del geocodificador, sense tocar el mapa (la vista de detall no
+  // té mapa).
+  function selectCityPoint(city) {
+    selectedPoint = { lng: city.lng, lat: city.lat };
+    selectedToponym = city.nom;
+    selectedMunicipality = "";
+    municipalityError = "";
+  }
+
+  // Oberta la vista de detall: si no hi ha cap punt seleccionat, es parteix
+  // de la primera ciutat de referència (Barcelona).
+  function openDetailView() {
+    view = "detail";
+
+    if (!selectedPoint) {
+      const city = referenceCities[0];
+      if (city) selectCityPoint(city);
     }
   }
 
@@ -1670,6 +1700,25 @@
     <div class="flex shrink-0 items-center gap-3 text-xs text-slate-400">
       <div
         class="flex items-center rounded-lg border border-white/10 bg-[#0b1118] p-0.5"
+        role="group"
+        aria-label={tr("viewMode")}
+      >
+        <button
+          type="button"
+          class={`rounded-md px-2 py-1 text-xs transition-colors duration-150 active:scale-[0.95] ${view === "map" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+          aria-pressed={view === "map"}
+          onclick={() => (view = "map")}>{tr("viewMap")}</button
+        >
+        <button
+          type="button"
+          class={`rounded-md px-2 py-1 text-xs transition-colors duration-150 active:scale-[0.95] ${view === "detail" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+          aria-pressed={view === "detail"}
+          onclick={openDetailView}>{tr("viewDetail")}</button
+        >
+      </div>
+
+      <div
+        class="flex items-center rounded-lg border border-white/10 bg-[#0b1118] p-0.5"
         aria-label={language === "ca"
           ? "Selector d’idioma"
           : "Language selector"}
@@ -1695,16 +1744,16 @@
   </header>
 
   <main
-    class="grid min-h-0 min-w-0 flex-1 grid-cols-1
+    class={view === "detail"
+      ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      : `grid min-h-0 min-w-0 flex-1 grid-cols-1
          grid-rows-[max-content_minmax(320px,55dvh)]
          overflow-x-hidden overflow-y-auto
          xl:grid-cols-[clamp(300px,23vw,390px)_minmax(0,1fr)]
-         xl:grid-rows-1 xl:overflow-hidden"
+         xl:grid-rows-1 xl:overflow-hidden`}
   >
     <aside
-      class="flex min-h-0 min-w-0 flex-col gap-4
-         border-t border-white/10 bg-[#101821] p-3
-         xl:overflow-y-auto xl:border-t-0 xl:border-r xl:p-4"
+      class={`flex min-h-0 min-w-0 flex-col gap-4 border-t border-white/10 bg-[#101821] p-3 xl:overflow-y-auto xl:border-t-0 xl:border-r xl:p-4 ${view === "detail" ? "hidden" : ""}`}
     >
       <section class="shrink-0">
         <Timeline
@@ -1810,7 +1859,9 @@
       </section>
     </aside>
 
-    <section class="relative h-full min-h-0 min-w-0 bg-[#18232c]">
+    <section
+      class={`relative h-full min-h-0 min-w-0 bg-[#18232c] ${view === "detail" ? "hidden" : ""}`}
+    >
       <div
         bind:this={mapContainer}
         class="absolute inset-0 h-full w-full bg-[#18232c]"
@@ -1972,6 +2023,37 @@
         onSelectHour={(index) => (selectedHour = index)}
       />
     </section>
+
+    {#if view === "detail"}
+      <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <ForecastDetail
+          forecast={forecast}
+          language={language}
+          displayMode={displayMode}
+          point={selectedPoint}
+          toponym={selectedToponym}
+          municipality={selectedMunicipality}
+          loadingMunicipality={loadingMunicipality}
+          municipalityError={municipalityError}
+          value={selectedValue}
+          series={pointSeries}
+          selectedHour={Number(selectedHour)}
+          loadingSeries={loadingSeries}
+          variables={diagValues}
+          loadingVariables={loadingDiag}
+          variablesAvailable={diagAvailable}
+          isPlaying={isPlaying}
+          onSelectHour={(index) => (selectedHour = index)}
+          onPrev={() => changeHour(-1)}
+          onNext={() => changeHour(1)}
+          onTogglePlay={togglePlayback}
+          onClose={() => (view = "map")}
+          onCitySelect={selectCityPoint}
+          onGeocodeSelect={selectGeocodedPoint}
+          getFocus={geocoderFocus}
+        />
+      </div>
+    {/if}
 
   </main>
 

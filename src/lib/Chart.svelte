@@ -2,6 +2,7 @@
   import { translate } from "../dictionary.js";
   import { colorForValue } from "./utci-classes.js";
   import { dayKey, formatDateShort, formatShortDateTime, formatTime } from "./time.js";
+  import { computeStressPeriods, COMFORT_MIN, COMFORT_MAX } from "./stress.js";
 
   // Gràfica de l'evolució de l'UTCI en un punt durant tota la previsió.
   // Cada tram del traç pren el color de la classe del valor, de manera que
@@ -68,7 +69,13 @@
     const span = max - min || 1;
 
     return (value) =>
-      PLOT_BOTTOM - ((value - min) / span) * (PLOT_BOTTOM - PLOT_TOP);
+      Math.max(
+        PLOT_TOP,
+        Math.min(
+          PLOT_BOTTOM,
+          PLOT_BOTTOM - ((value - min) / span) * (PLOT_BOTTOM - PLOT_TOP),
+        ),
+      );
   });
 
   // Punts amb les coordenades ja calculades.
@@ -118,6 +125,15 @@
 
     return `${head} L${last.x},${PLOT_BOTTOM} L${first.x},${PLOT_BOTTOM} Z`;
   });
+
+  // Períodes amb estrès tèrmic: brins consecutius fora de la zona de confort.
+  const stressRuns = $derived(
+    computeStressPeriods(plotted).map((run) => ({
+      ...run,
+      x1: scaleX(run.from),
+      x2: scaleX(run.to),
+    })),
+  );
 
   // Marques de dia a l'eix horitzontal.
   const dayMarks = $derived.by(() => {
@@ -292,6 +308,39 @@
       {#if areaPath}
         <path d={areaPath} fill="url(#chart-area)" />
       {/if}
+
+      <!-- Períodes amb estrès tèrmic: banda ombrada i etiqueta. -->
+      {#each stressRuns as run (run.from)}
+        <rect
+          x={run.x1}
+          y={PLOT_TOP}
+          width={Math.max(2, run.x2 - run.x1)}
+          height={PLOT_BOTTOM - PLOT_TOP}
+          fill={colorForValue(run.peak, displayMode)}
+          opacity={0.12}
+        />
+      {/each}
+
+      <!-- Línia de confort (sense estrès): 9–26 °C. -->
+      <line
+        x1={PLOT_LEFT}
+        y1={scaleY(COMFORT_MIN)}
+        x2={PLOT_RIGHT}
+        y2={scaleY(COMFORT_MIN)}
+        stroke="#94a3b8"
+        strokeOpacity="0.35"
+        strokeDasharray="3 3"
+      />
+
+      <line
+        x1={PLOT_LEFT}
+        y1={scaleY(COMFORT_MAX)}
+        x2={PLOT_RIGHT}
+        y2={scaleY(COMFORT_MAX)}
+        stroke="#94a3b8"
+        strokeOpacity="0.35"
+        strokeDasharray="3 3"
+      />
 
       <!-- Trams colorejats per classe UTCI. -->
       {#each segments as segment}

@@ -113,7 +113,17 @@ export const translations = {
         zoomIn: "Aproxima",
         zoomOut: "Allunya",
         resizePanel: "Redimensiona el panell",
-        pointNoData: "No hi ha dades per a aquest punt."
+        pointNoData: "No hi ha dades per a aquest punt.",
+        viewMap: "Mapa",
+        viewDetail: "Detall",
+        viewMode: "Vista",
+        backToMap: "Torna al mapa",
+        detailTitle: "Previsió detallada",
+        choosePlace: "Tria un lloc o cerca'n un",
+        cityList: "Ciutats de referència",
+        stressPeriods: "Períodes amb estrès tèrmic",
+        noStressPeriods: "Cap període amb estrès tèrmic",
+        heatwave: "Estrès tèrmic"
     },
 
     en: {
@@ -228,7 +238,17 @@ export const translations = {
         zoomIn: "Zoom in",
         zoomOut: "Zoom out",
         resizePanel: "Resize panel",
-        pointNoData: "No data for this location."
+        pointNoData: "No data for this location.",
+        viewMap: "Map",
+        viewDetail: "Details",
+        viewMode: "View",
+        backToMap: "Back to map",
+        detailTitle: "Detailed forecast",
+        choosePlace: "Choose a place or search for one",
+        cityList: "Reference cities",
+        stressPeriods: "Thermal stress periods",
+        noStressPeriods: "No thermal stress periods",
+        heatwave: "Thermal stress"
     }
 };
 
