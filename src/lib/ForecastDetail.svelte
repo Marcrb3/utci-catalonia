@@ -65,7 +65,7 @@
   <div class="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 bg-[#101821] px-4 py-3">
     <div class="min-w-0">
       <h2 class="text-sm font-semibold">{translate("detailTitle", language)}</h2>
-      <p class="mt-0.5 truncate text-xs text-slate-400">
+      <p class="mt-0.5 truncate text-base font-semibold text-teal-200">
         {toponym || municipality || (point ? `${point.lat.toFixed(4)}°, ${point.lng.toFixed(4)}°` : "")}
       </p>
     </div>

@@ -280,7 +280,7 @@
           x={PLOT_LEFT - 6}
           y={scaleY(tick) + 4}
           fill="#94a3b8"
-          font-size="10"
+          font-size="8"
           text-anchor="end">{tick}°</text
         >
       {/each}
@@ -300,7 +300,7 @@
           x={mark.x + 3}
           y={HEIGHT - 8}
           fill="#94a3b8"
-          font-size="9">{mark.label}</text
+          font-size="8">{mark.label}</text
         >
       {/each}
 
@@ -398,7 +398,7 @@
             x={Math.min(Math.max(hoverPoint.x, PLOT_LEFT + 30), PLOT_RIGHT - 30)}
             y={Math.max(hoverPoint.y - 10, 10)}
             fill="#e2e8f0"
-            font-size="10"
+            font-size="8"
             text-anchor="middle">{hoverPoint.value.toFixed(1)}°</text
           >
         </g>
