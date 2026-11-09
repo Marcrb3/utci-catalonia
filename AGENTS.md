@@ -82,7 +82,7 @@ Si el darrer pas visible ja és passat, es mostra un avís (`forecastOutdated`).
 
 Ids de source/layer: `utci-raster-source`, `utci-raster-layer`, `utci-raster-prev-source`, `utci-raster-prev-layer`, `hillshadeSource`, `terrain-hillshade`.
 
-`ordenarCapes()` reordena sota l'estil base de l'ICGC: l'ombrejat del relleu queda per sota de la primera capa de text (`contour-cotes`) i l'ancoratge del ràster UTCI **depèn del zoom** (`ZOOM_DETALL = 10`, a `App.svelte`): per sota de z10 és `tunnel-service-track-casing` (fons, usos del sòl, aigua i edificis tintats; xarxa viària, ferrocarrils, ponts, límits i totes les etiquetes per damunt) i a partir de z10 és `contour-cotes`, la **posició inicial** (tot el detall per damunt). Si l'estil no tingués l'àncora concreta, cau a la primera capa de text. Es crida en afegir capes, en l'event `zoomend` i després d'afegir el ràster; una guarda interna evita `moveLayer` si l'ordre ja és el correcte (així `zoomend` no reubica símbols innecessàriament). Espera l'event `idle` només si l'estil encara no té capes (càrrega inicial): no es pot fer servir `isStyleLoaded()` perquè es queda fals segons després d'un canvi de zoom (tiles pendents) i el reordenatge s'endarreria.
+`ordenarCapes()` reordena les capes afegides per l'app **per sota de la primera capa de text** de l'estil base (a `darkstyle.json`, `water_name`), que és també l'àncora del ràster. L'ordre final, de baix a dalt: `background` i trames de fons (aigua, landcover, landuse, waterway) → `terrain-hillshade` → `utci-raster-layer` → `utci-raster-prev-layer` → la primera capa de text → tota la resta (xarxa viària, ferrocarrils, edificis, límits i totes les etiquetes). Així les dades es llegeixen a sobre del mapa base i el detall cartogràfic es dibuixa a sobre de les dades; les trames opaques del fons (aigua, parcs) queden sota el ràster i no el cobreixen. L'àncora es calcula de l'estil (**no hi ha cap id fix** ni llindar de zoom): si l'estil no tingués cap capa de text, `ordenarCapes()` no fa res. Es crida en afegir l'ombrejat (event `load`) i en crear el ràster; una guarda interna evita `moveLayer` si l'ordre ja és el correcte. Espera l'event `idle` només si l'estil encara no té capes (càrrega inicial): no es pot fer servir `isStyleLoaded()` perquè es queda fals segons després d'un canvi de zoom (tiles pendents) i el reordenatge s'endarreria.
 
 - **Cross-fade**: hi ha una capa auxiliar (`utci-raster-prev-layer`) **per sobre** de la principal. `crossFadeRaster(prepared, from)` fa: la auxiliar carrega la imatge visible (amagada) → traspàs invisible (auxiliar a `RASTER_OPACITY`, principal a 0, en el mateix fotograma) → la principal rep la nova per sota → `animateRasterFade()` les fona amb `requestAnimationFrame` coordinant les dues opacitats perquè la cobertura total es mantingui constant (una baixada i pujada lineals duplicarien els colors i produirien un flaig fosc). `ensureRasterLayer` fixa `displayedPrepared` **abans** de llençar el fade: és la imatge d'origen del següent. La textura es puja de forma asíncrona: si no s'espera (`waitForSourceData`, que espera l'event `data` amb límit de 400 ms), es veu un fotograma vell parpellejant.
 - El punt seleccionat **ja no és una capa**: és un `maplibregl.Marker` HTML (`.selected-marker`) per poder fer la pols en CSS sense redibuixar el mapa.
@@ -114,6 +114,7 @@ Ids de source/layer: `utci-raster-source`, `utci-raster-layer`, `utci-raster-pre
 - `tr(key)` a `App.svelte` és una funció reactiva `$:` a propòsit (comentari al codi) perquè `{tr(...)}` es torni a renderitzar en canviar d'idioma. No la converteixis en una `const` normal.
 - L'array `classes` (a `src/lib/utci-classes.js`) conté els `label`/`range` en català; `classLabels` i `rangeKeys` els mapejen a claus del diccionari. Canviar un label implica tocar `classLabels` + `rangeKeys` + `dictionary.js`. Els límites numèrics són `min`/`max`; el text `label`/`range` és només de display.
 - Els components de `src/lib/` tradueixen amb `translate(key, language)` de `dictionary.js` (no tenen `tr()` reactiu; re-renderitzen quan canvia la prop `language`).
+- **Els noms del mapa no són claus del diccionari**: els posa l'estil base (`public/darkstyle.json`, una còpia editada de l'OpenFreeMap dark). `aplicarIdiomaEtiquetes(language)` (amb el `$:` i la trucada a l'event `load` de `App.svelte`) reescriu les expressions `text-field` per fer servir `name:ca` (o `name_en` amb la UI en anglès), caient a `name` si el topònim no té traducció. Els tiles d'OpenFreeMap porten `name:xx` per a molts idiomes.
 
 ## Svelte
 
@@ -157,7 +158,7 @@ Cap dels dos forma part de `npm run build` i no s'executen automàticament.
 - `public/favicon.svg` **es construeix**, no es dibuixa a mà: `node tools/generate-favicon.mjs` calcula la geometria (els 8 raigs del sol, repartits regularment al voltant del disc). Si cal canviar colors o proporcions, edita les constants de la capeta del script i torna a executar-lo.
 - Els icones PNG es generen amb `node tools/generate-icons.mjs` a partir del SVG (requereix Chrome; els PNG ja estan versionats, així que la compilació no en depèn). L'eina genera tres variants: quadrada (fons opac ple), *maskable* (el dibuix escalat al 72 % a la zona segura) i `apple-touch-icon`.
 - `node tools/check-icons.mjs` verifica que els PNG no tenen el dibuix tallat i que el fons és opac.
-- **No es posen a la memòria cau els recursos de tercers** (estil base de l'ICGC, relleu, API): no es redistribueixen dades d'altres. Els ràsters `.tif` d'UTCI sí (són immutables) i se'n conserven els 12 darrers.
+- **No es posen a la memòria cau els recursos de tercers** (tiles/glifs/sprite d'OpenFreeMap, relleu, API): no es redistribueixen dades d'altres. L'estil base (`public/darkstyle.json`) és local i sí que es precarrega (a `PRECACHE_PUBLIC` de `vite.config.js`) juntament amb la resta de recursos de l'app. Els ràsters `.tif` d'UTCI sí que es guarden (són immutables) i se'n conserven els 12 darrers.
 - **Les peticions amb capçalera `Range` passen de llarg** (sense `respondWith`): la memòria cau només emmagatzema respostes completes i les lectures parcials del diagnòstic no hi caben. Els `diag_*.tif` també passen de llarg: els gestiona el visor amb cache pròpia, així que no competeixen amb els UTCI que sí que es guarden per funcionar sense connexió.
 
 ## iOS: àrees segures
@@ -179,7 +180,7 @@ Cap dels dos forma part de `npm run build` i no s'executen automàticament.
 
 ## Dependències externes (el dev en necessita)
 
-- Estil base ICGC: `https://geoserveis.icgc.cat/contextmaps/icgc_mapa_base_fosc.json`
+- Estil base: **local**, `public/darkstyle.json` (còpia editada de l'OpenFreeMap dark). Es resol amb `new URL("darkstyle.json", document.baseURI).href` perquè la base de Vite és `/utci-catalonia/`; una ruta absoluta es trencaria a Pages. Encara demana a `tiles.openfreemap.org` el TileJSON `https://tiles.openfreemap.org/planet` (attribution) i els tiles/glifs/sprite.
 - DEM Mapterhorn per al relleu/ombrejat: `https://tiles.mapterhorn.com/tilejson.json`
 - API Territorial ICGC per consultar el municipi.
 - Geocodificador ICGC (autocomplete de la navbar): `https://eines.icgc.cat/geocodificador/autocompletar?text=…` (GeoJSON, CORS `*`; docs a `https://eines.icgc.cat/geocodificador/api-docs/`).
@@ -187,4 +188,4 @@ Cap dels dos forma part de `npm run build` i no s'executen automàticament.
 
 ## Atribució de les dades
 
-Dades UTCI: **ECMWF**. Base cartogràfica i relleu: **ICGC**. Comprova les condicions de reutilització i atribució de cada font abans d'afegir o redistribuir dades.
+Dades UTCI: **ECMWF**. Base cartogràfica: **OpenFreeMap** (© OpenMapTiles, dades d'**OpenStreetMap**). Relleu (hillshade): **Mapterhorn**. API Territorial i geocodificador: **ICGC**. Comprova les condicions de reutilització i atribució de cada font abans d'afegir o redistribuir dades.

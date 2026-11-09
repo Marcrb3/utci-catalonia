@@ -1,7 +1,6 @@
 <script>
   import { translate } from "../dictionary.js";
   import Chart from "./Chart.svelte";
-  import Timeline from "./Timeline.svelte";
   import Legend from "./Legend.svelte";
   import Geocoder from "./Geocoder.svelte";
   import {
@@ -13,19 +12,24 @@
   import { computeStressPeriods } from "./stress.js";
   import { formatShortDateTime } from "./time.js";
   import { referenceCities } from "./cities.js";
+  import {
+    ORIGINAL_ROWS,
+    USED_ROWS,
+    formatVariable,
+    formatDifference,
+    airTemperatureDifference,
+    utciAirTemperatureDifference,
+  } from "./variables.js";
 
   // Pàgina de detall de la previsió sobre un punt concret: sense mapa.
-  // Reutilitza el geocoder, la gràfica, la llegenda i el control temporal
-  // del projecte, i només hi afegeix el resum dels períodes amb estrès.
+  // Reutilitza el geocoder, la gràfica i la llegenda del projecte, i hi
+  // afegeix el resum dels períodes d'estrès i les variables del diagnòstic.
   let {
-    forecast = [],
     language = "ca",
     displayMode = "utci",
     point = null,
     toponym = "",
     municipality = "",
-    loadingMunicipality = false,
-    municipalityError = "",
     value = null,
     series = [],
     selectedHour = 0,
@@ -33,11 +37,7 @@
     variables = null,
     loadingVariables = false,
     variablesAvailable = false,
-    isPlaying = false,
     onSelectHour = () => {},
-    onPrev = () => {},
-    onNext = () => {},
-    onTogglePlay = () => {},
     onClose = () => {},
     onCitySelect = () => {},
     onGeocodeSelect = () => {},
@@ -45,6 +45,14 @@
   } = $props();
 
   const stressPeriods = $derived(computeStressPeriods(series));
+
+  // Acordió de "Com s'obté l'UTCI": plegat per defecte.
+  let calculationOpen = $state(false);
+
+  const tempDifference = $derived(airTemperatureDifference(variables));
+  const utciTempDifference = $derived(
+    utciAirTemperatureDifference(value, variables),
+  );
 
   function periodRange(run) {
     const from = series[run.from];
@@ -81,7 +89,11 @@
 
   <div class="min-h-0 flex-1 overflow-y-auto">
     <div class="p-4">
-      <Geocoder {language} {getFocus} onSelect={onGeocodeSelect} />
+      <!-- En pantalles petites ja hi ha el cercador de la navbar, així que
+           el de la vista de detall només es mostra a partir de lg. -->
+      <div class="hidden lg:block">
+        <Geocoder {language} {getFocus} onSelect={onGeocodeSelect} />
+      </div>
 
       <div class="mt-4">
         <h3 class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
@@ -178,6 +190,149 @@
             </div>
           </div>
         </div>
+
+        <!-- D'on surt el valor UTCI: variables del diagnòstic, plegables. -->
+        {#if variablesAvailable}
+          <div class="mt-4 rounded-xl border border-white/10 bg-[#0b1118] p-3">
+            <button
+              type="button"
+              class="flex w-full items-center justify-between gap-2 text-left"
+              aria-expanded={calculationOpen}
+              onclick={() => (calculationOpen = !calculationOpen)}
+            >
+              <h3
+                class="text-[11px] font-semibold uppercase tracking-widest text-slate-400"
+              >
+                {translate("calculationTitle", language)}
+              </h3>
+
+              <span class="flex shrink-0 items-center gap-2">
+                {#if loadingVariables}
+                  <span class="text-[10px] text-amber-300">
+                    {translate("calculating", language)}
+                  </span>
+                {/if}
+
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  aria-hidden="true"
+                  class={`text-slate-500 motion-safe:transition-transform motion-safe:duration-200 ${calculationOpen ? "rotate-180" : ""}`}
+                >
+                  <path
+                    d="M2.5 4.5 6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </button>
+
+            {#if calculationOpen}
+              <div class="mt-2">
+                <p class="text-[11px] leading-relaxed text-slate-400">
+                  {translate("calculationIntro", language)}
+                </p>
+
+                <div class="mt-3 space-y-3">
+                  <section>
+                    <h4
+                      class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+                    >
+                      {translate("originalData", language)}
+                    </h4>
+
+                    <dl class="space-y-1">
+                      {#each ORIGINAL_ROWS as row (row.key)}
+                        <div
+                          class="flex items-baseline justify-between gap-3 border-b border-white/5 pb-1 last:border-0 last:pb-0"
+                        >
+                          <dt class="text-[11px] leading-tight text-slate-400">
+                            {translate(row.labelKey, language)}
+                          </dt>
+
+                          <dd
+                            class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                          >
+                            {formatVariable(row, variables?.[row.key])}
+                          </dd>
+                        </div>
+                      {/each}
+                    </dl>
+                  </section>
+
+                  <section>
+                    <h4
+                      class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+                    >
+                      {translate("usedData", language)}
+                    </h4>
+
+                    <dl class="space-y-1">
+                      {#each USED_ROWS as row (row.key)}
+                        <div
+                          class="flex items-baseline justify-between gap-3 border-b border-white/5 pb-1 last:border-0 last:pb-0"
+                        >
+                          <dt class="text-[11px] leading-tight text-slate-400">
+                            {translate(row.labelKey, language)}
+                          </dt>
+
+                          <dd
+                            class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                          >
+                            {formatVariable(row, variables?.[row.key])}
+                          </dd>
+                        </div>
+                      {/each}
+                    </dl>
+                  </section>
+
+                  <section class="border-t border-white/10 pt-2">
+                    <h4
+                      class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+                    >
+                      {translate("comparisonsTitle", language)}
+                    </h4>
+
+                    <dl class="space-y-1">
+                      <div class="flex items-baseline justify-between gap-3">
+                        <dt class="text-[11px] leading-tight text-slate-400">
+                          {translate("airTemperatureDifference", language)}
+                        </dt>
+                        <dd
+                          class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                        >
+                          {formatDifference(tempDifference)}
+                        </dd>
+                      </div>
+
+                      {#if value}
+                        <div class="flex items-baseline justify-between gap-3">
+                          <dt class="text-[11px] leading-tight text-slate-400">
+                            {translate("utciAirTemperatureDifference", language)}
+                          </dt>
+                          <dd
+                            class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                          >
+                            {formatDifference(utciTempDifference)}
+                          </dd>
+                        </div>
+                      {/if}
+                    </dl>
+
+                    <p class="mt-2 text-[10px] leading-relaxed text-slate-500">
+                      {translate("calculationNote", language)}
+                    </p>
+                  </section>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
       {/if}
     </div>
   </div>

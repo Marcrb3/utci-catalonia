@@ -2,6 +2,14 @@
   import { translate } from "../dictionary.js";
   import Chart from "./Chart.svelte";
   import { verticalResize } from "./resize.js";
+  import {
+    ORIGINAL_ROWS,
+    USED_ROWS,
+    formatVariable,
+    formatDifference,
+    airTemperatureDifference as airTemperatureDifferenceFor,
+    utciAirTemperatureDifference as utciAirTemperatureDifferenceFor,
+  } from "./variables.js";
 
   // Informació del punt seleccionat: municipi, coordenades, valor UTCI
   // i l'evolució temporal de tot el període de previsió.
@@ -29,75 +37,14 @@
 
   const MIN_HEIGHT = 200;
 
-  // Variables que arriben com a objecte {nom_de_banda: valor} des
-  // d'App.svelte. Les agrupem segons el paper que tenen en el procés per
-  // fer més llegible d'on surt el valor UTCI final.
-  const ORIGINAL_ROWS = [
-    { key: "t2m_raw", labelKey: "varT2mRaw", digits: 1, unit: "°C" },
-    {
-      key: "corr_total",
-      labelKey: "varCorrTotal",
-      digits: 1,
-      unit: "°C",
-      signed: true,
-    },
-  ];
-
-  const USED_ROWS = [
-    { key: "t2m_used", labelKey: "varT2mUsed", digits: 1, unit: "°C" },
-    { key: "wind", labelKey: "varWind", digits: 1, unit: "m/s" },
-    { key: "rh", labelKey: "varRh", digits: 0, unit: "%" },
-    { key: "mrt", labelKey: "varMrt", digits: 1, unit: "°C" },
-    { key: "shadow", labelKey: "varShadow", percent: true },
-  ];
-
-  function formatVariable(row, raw) {
-    // null vol dir "banda sense valor" (fora del domini o pendent).
-    if (raw == null) return "—";
-
-    const value = Number(raw);
-
-    if (!Number.isFinite(value)) return "—";
-
-    // L'ombra es publica com a fracció del píxel amb ombra.
-    if (row.percent) return `${Math.round(value * 100)} %`;
-
-    let sign = "";
-
-    if (row.signed && value > 0) sign = "+";
-    else if (value < 0) sign = "−";
-
-    return `${sign}${Math.abs(value).toFixed(row.digits)} ${row.unit}`;
-  }
-
-  function formatDifference(raw) {
-    if (raw == null || !Number.isFinite(Number(raw))) return "—";
-
-    const value = Number(raw);
-    const sign = value > 0 ? "+" : value < 0 ? "−" : "";
-
-    return `${sign}${Math.abs(value).toFixed(1)} °C`;
-  }
-
-  function numericValue(raw) {
-    if (raw == null || !Number.isFinite(Number(raw))) return null;
-
-    return Number(raw);
-  }
-
-  // Són diferències descriptives entre valors observats. No són una
-  // descomposició causal de l'UTCI, que es calcula amb una funció no lineal.
+  // Variables del diagnòstic: les calculen les funcions compartides de
+  // variables.js, igual que a la pàgina de detall.
   const airTemperatureDifference = $derived(
-    numericValue(variables?.t2m_used) !== null &&
-      numericValue(variables?.t2m_raw) !== null
-      ? numericValue(variables.t2m_used) - numericValue(variables.t2m_raw)
-      : null,
+    airTemperatureDifferenceFor(variables),
   );
 
   const utciAirTemperatureDifference = $derived(
-    value?.value != null && numericValue(variables?.t2m_used) !== null
-      ? Number(value.value) - numericValue(variables.t2m_used)
-      : null,
+    utciAirTemperatureDifferenceFor(value, variables),
   );
 
   let panelElement = $state(null);

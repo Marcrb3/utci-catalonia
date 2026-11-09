@@ -12,7 +12,7 @@
 //     parcials no caben a la memòria cau; el diagnòstic per punt el
 //     gestiona el visor amb cache pròpia).
 //   · Recursos de l'aplicació  → memòria cau primer.
-//   · Terceres parts           → sense memòria cau (estil base de l'ICGC,
+//   · Terceres parts           → sense memòria cau (estil base d'OpenFreeMap,
 //     relleu i API): no es redistribueixen les dades d'altres.
 export function serviceWorkerSource({ precache, version }) {
   return `/* Service worker de l'observatori d'estrès tèrmic (UTCI Catalunya).

@@ -12,7 +12,8 @@ Aplicació web interactiva per visualitzar dades de l'índex **Universal Thermal
 
 ### Mapa i representació
 
-- **Mapa interactiu** amb MapLibre GL JS i l'estil base fosc de l'ICGC.
+- **Mapa interactiu** amb MapLibre GL JS i un estil base fosc local (`public/darkstyle.json`, una còpia editada de l’OpenFreeMap; dades d’OpenStreetMap).
+- **Noms i topònims en català** (`name:ca` dels tiles d’OpenFreeMap, amb reserva al nom local); amb la interfície en anglès es fan servir els noms anglesos.
 - **Capa ràster UTCI** amb dos modes de representació, selectable des del panell lateral: **categoritzat** (classes d’estrès tèrmic) o **continu** (rampa interpolada de la mateixa paleta). En tots dos la transparència deixa veure el relleu.
 - **Ombrejat del relleu** (hillshade) calculat a partir del DEM de Mapterhorn.
 - **Animació entre fotogrames**: en canviar d'hora, la imatge anterior es fon amb la nova.
@@ -119,6 +120,7 @@ El `build` també genera `dist/sw.js`, el **service worker**, amb la llista real
 ```
 public/
   data/                   manifest + ràsters GeoTIFF (no es toquen)
+  darkstyle.json          estil base del mapa (còpia editada de l'OpenFreeMap dark)
   favicon.svg             logotip (origen dels icones de la PWA)
   icon-*.png              icones de la PWA (192, 512 i maskable)
   manifest.webmanifest    manifest de l'aplicació web
@@ -200,7 +202,7 @@ L’aplicació és instal·lable i funciona sense connexió.
   - **xarxa primer** per a la navegació i per a `forecast.json`, amb còpia local de reserva;
   - **memòria cau primer** per als ràsters `.tif` d’UTCI, que són immutables (el nom hi porta la marca de temps). Se’n conserven els 12 darrers;
   - **xarxa directa** per a les peticions amb capçalera `Range` (les lectures parcials no caben a la memòria cau) i per als `diag_*.tif`, que gestiona el visor amb cache pròpia;
-  - **cap memòria cau** per als recursos de tercers (estil base de l’ICGC, relleu, API): no es redistribueixen dades d’altres.
+  - **cap memòria cau** per als recursos de tercers (tiles/glifs/sprite d’OpenFreeMap, relleu, API): no es redistribueixen dades d’altres. L’estil base (`darkstyle.json`) és local i sí que es precarrega.
 - El registre només es fa en producció (`import.meta.env.PROD`), per no interferir amb el recàrrega en calent de Vite.
 - La versió de la memòria cau és un hash dels noms de fitxer: en publicar una versió nova, la memòria cau antiga s'esborra sola.
 
@@ -264,9 +266,9 @@ node pwa-check.mjs  # en una altra: comprova la PWA i el mode sense connexió
 - **Procedència de les dades UTCI:** ECMWF
 - **Cobertura geogràfica:** Catalunya
 - **Període temporal i freqüència de les previsions:** 3-4 dies
-- **Estil base cartogràfic:** Institut Cartogràfic i Geogràfic de Catalunya (ICGC)
+- **Estil base cartogràfic:** [OpenFreeMap](https://openfreemap.org) (© OpenMapTiles, dades d’OpenStreetMap)
 - **Relleu (DEM):** Mapterhorn
-- **Municipis:** API Territorial de l’ICGC
+- **Municipis i geocodificador:** API Territorial i geocodificador de l’ICGC
 
 Abans de redistribuir les dades o publicar el visor, cal comprovar les condicions de reutilització i atribució de cada font.
 

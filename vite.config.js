@@ -10,6 +10,7 @@ const base = '/utci-catalonia/'
 
 // Fitxers de public/ que es precarreguen al service worker.
 const PRECACHE_PUBLIC = [
+  'darkstyle.json', // estil base del mapa
   'favicon.svg',
   'manifest.webmanifest',
   'icon-192.png',

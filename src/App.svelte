@@ -11,7 +11,13 @@
   import InfoPanel from "./lib/InfoPanel.svelte";
   import Geocoder from "./lib/Geocoder.svelte";
   import ForecastDetail from "./lib/ForecastDetail.svelte";
-  import { classes, labelForClass, getClass, colorForValue, rampGradientCss } from "./lib/utci-classes.js";
+  import {
+    classes,
+    labelForClass,
+    getClass,
+    colorForValue,
+    rampGradientCss,
+  } from "./lib/utci-classes.js";
   import { referenceCities } from "./lib/cities.js";
   import {
     formatTime,
@@ -94,18 +100,8 @@
   // Opacitat del ràster sobre el mapa base. Els píxels PNG es bullen
   // opacs (alfa 255): tota la transparència ve d'aquesta opacitat, de
   // manera que no hi ha una segona dilució que enfosqueixi els colors.
-  const RASTER_OPACITY = 0.9;
+  const RASTER_OPACITY = 0.7;
   const RASTER_FADE_MS = 260;
-
-  // L'ancoratge del ràster depèn del zoom: a partir d'aquest llindar (pobles
-  // des de z10, barris i límits municipals des de z11, noms de carrer des de
-  // z14) es baixa fins a la posició inicial i tot el detall del mapa es
-  // dibuixa per damunt; per sota, una posició intermèdia en què la trama de
-  // fons queda tintada i la xarxa viària, els límits i totes les etiquetes
-  // es llegeixen a sobre.
-  const ZOOM_DETALL = 10;
-  const ANCLA_DETALL = "contour-cotes"; // posició inicial del ràster
-  const ANCLA_GENERAL = "tunnel-service-track-casing";
 
   let seriesRequestId = 0;
   let seriesPointKey = null;
@@ -210,9 +206,7 @@
 
   // El manifest només duu diag_url si el pipeline ha generat els
   // rasters de diagnòstic; sense ells, el panell amaga la taula.
-  $: diagAvailable = !!(
-    activeForecast?.diag_url || activeForecast?.diagUrl
-  );
+  $: diagAvailable = !!(activeForecast?.diag_url || activeForecast?.diagUrl);
 
   // La taula de variables cobreix el fotograma visible: es torna a
   // consultar en canviar de punt o d'hora (la cache evita tornar a
@@ -349,6 +343,13 @@
     }
   }
 
+  // Ordre de capes sobre l'estil base. L'àncora és la **primera capa de text**
+  // de l'estil (a l'OpenFreeMap dark, `water_name`): l'ombrejat del relleu i
+  // el ràster UTCI (amb la capa auxiliar del cross-fade a sobre) queden just a
+  // sota, de manera que tot el detall —xarxa viària, edificis, límits i totes
+  // les etiquetes— es dibuixa per damunt de les dades, i les trames de fons
+  // (aigua, boscos, nuclis urbans) queden sota el ràster, que les deixa veure
+  // al 10 % de la seva opacitat.
   function ordenarCapes() {
     if (!map) return;
 
@@ -369,50 +370,100 @@
         layer.type === "symbol" && layer.layout?.["text-field"] != null,
     );
 
-    // Ancoratge segons el zoom (veure ZOOM_DETALL): a zooms propers el
-    // ràster baixa fins a la posició inicial i tot el detall es dibuixa per
-    // damunt; a vista de conjunt es manté la posició intermèdia. Si
-    // l'estil canviés i l'àncora concreta desaparegués, es cau a la primera
-    // capa de text (posició inicial).
-    const anclaId =
-      map.getZoom() >= ZOOM_DETALL ? ANCLA_DETALL : ANCLA_GENERAL;
-    const anclaRaster =
-      layers.find((layer) => layer.id === anclaId) ?? primeraCapaText;
+    // Estil sense cap text: no hi ha res a què ancorar (no passa amb
+    // l'estil d'OpenFreeMap, que sempre en té).
+    if (!primeraCapaText) return;
 
     const indexDe = (id) => layers.findIndex((layer) => layer.id === id);
-    const iText = indexDe("contour-cotes");
+    const iText = indexDe(primeraCapaText.id);
     const iHill = indexDe("terrain-hillshade");
     const iRaster = indexDe("utci-raster-layer");
     const iPrev = indexDe("utci-raster-prev-layer");
-    const iAncla = anclaRaster ? indexDe(anclaRaster.id) : -1;
 
     // Ja està ordenat? Evita moure capes (i reubicar els símbols) a cada
-    // zoomend: els canvis només passen en afegir capes o en creuar el
-    // llindar de zoom.
+    // crida: els canvis només passen en afegir capes (l'ombrejat en carregar
+    // l'estil, el ràster en crear-lo).
     const ordenat =
-      (iText === -1 || iHill < iText) &&
-      (iRaster === -1 || iHill < iRaster) &&
-      (iRaster === -1 || (iPrev === iRaster + 1 && iAncla === iPrev + 1));
+      (iHill === -1 || iHill < iText) &&
+      (iRaster === -1 ||
+        (iPrev === -1
+          ? iRaster + 1 === iText
+          : iPrev === iRaster + 1 && iText === iPrev + 1));
 
     if (ordenat) return;
 
-    // L'ombrejat del relleu es queda per sota de la primera capa de text i
-    // per sota del ràster.
-    if (map.getLayer("terrain-hillshade") && primeraCapaText) {
+    // Cada `moveLayer` insereix la capa just abans de l'àncora, així que
+    // l'ordre de les crides determina l'ordre final: ombrejat, ràster,
+    // capa auxiliar i, tot just a sobre, la primera capa de text.
+    if (map.getLayer("terrain-hillshade")) {
       map.moveLayer("terrain-hillshade", primeraCapaText.id);
     }
 
-    if (anclaRaster) {
-      if (map.getLayer("utci-raster-layer")) {
-        map.moveLayer("utci-raster-layer", anclaRaster.id);
-      }
+    if (map.getLayer("utci-raster-layer")) {
+      map.moveLayer("utci-raster-layer", primeraCapaText.id);
+    }
 
-      // La capa auxiliar queda a sobre: en fading deixa veure la nova.
-      if (map.getLayer("utci-raster-prev-layer")) {
-        map.moveLayer("utci-raster-prev-layer", anclaRaster.id);
+    if (map.getLayer("utci-raster-prev-layer")) {
+      map.moveLayer("utci-raster-prev-layer", primeraCapaText.id);
+    }
+  }
+
+  // Etiquetes i topònims en l'idioma de la interfície. L'estil d'OpenFreeMap
+  // fa servir `name_en` (que cau a `name` si no hi ha versió anglesa); els
+  // tiles porten també `name:ca`, així que es reescriuen les expressions de
+  // text per prioritzar-lo. Si un topònim no té `name:ca`, es respon amb
+  // `name` (el nom local, que a Catalunya sol ser el català).
+  function aplicarIdiomaEtiquetes(idioma) {
+    if (!map) return;
+
+    // `getStyle()` torna `undefined` fins que l'estil s'ha carregat.
+    const layers = map.getStyle()?.layers;
+    if (!layers?.length) return;
+
+    const clau = idioma === "en" ? "name_en" : "name:ca";
+
+    for (const layer of layers) {
+      if (layer.type !== "symbol") continue;
+
+      const text = layer.layout?.["text-field"];
+      if (!Array.isArray(text)) continue;
+
+      const nou = substituirCampNom(text, clau);
+
+      if (nou !== text) {
+        map.setLayoutProperty(layer.id, "text-field", nou);
       }
     }
   }
+
+  // Canvia `["get","name_en"]` (i el `name:ca` d'una crida anterior) per la
+  // clau demanada. Torna la mateixa referència si no hi ha cap canvi, perquè
+  // no es torni a muntar el text sense motiu.
+  function substituirCampNom(expressio, clau) {
+    if (!Array.isArray(expressio)) return expressio;
+
+    if (
+      expressio.length === 2 &&
+      expressio[0] === "get" &&
+      (expressio[1] === "name_en" || expressio[1] === "name:ca")
+    ) {
+      return expressio[1] === clau ? expressio : ["get", clau];
+    }
+
+    let canviat = false;
+    const fills = expressio.map((fill) => {
+      const nou = substituirCampNom(fill, clau);
+      if (nou !== fill) canviat = true;
+      return nou;
+    });
+
+    return canviat ? fills : expressio;
+  }
+
+  // En canviar l'idioma de la UI s'actualitzen les expressions de text de
+  // l'estil (`map` perquè es repeteixi en crear el mapa; llavors l'estil
+  // encara no hi és i ho reprendrà l'event `load`).
+  $: if (map && language) aplicarIdiomaEtiquetes(language);
 
   async function preloadAllRasters() {
     if (preloadPromise || !forecast.length) return preloadPromise;
@@ -674,10 +725,7 @@
 
     // Mateixa imatge (mateixa URL i mateix mode): només actualitzem.
     // Restablim l'estat estable per si hi havia un fade a mig camí.
-    if (
-      !from ||
-      (from.url === prepared.url && from.mode === prepared.mode)
-    ) {
+    if (!from || (from.url === prepared.url && from.mode === prepared.mode)) {
       setRasterOpacity("utci-raster-layer", RASTER_OPACITY, 0);
       setRasterOpacity("utci-raster-prev-layer", 0, 0);
 
@@ -1074,25 +1122,28 @@
     return true;
   }
 
-  const REVERSE_GEOCODER_URL =
-    "https://eines.icgc.cat/geocodificador/invers";
+  const REVERSE_GEOCODER_URL = "https://eines.icgc.cat/geocodificador/invers";
   const REVERSE_GEOCODER_LAYERS = "topo1,topo2,address,pk";
 
   function featureLayerRank(feature) {
     const layer = feature?.properties?.layer;
 
-    return {
-      topo1: 0,
-      topo2: 1,
-      address: 2,
-      pk: 3,
-    }[layer] ?? 99;
+    return (
+      {
+        topo1: 0,
+        topo2: 1,
+        address: 2,
+        pk: 3,
+      }[layer] ?? 99
+    );
   }
 
   function placeNameFromFeature(feature) {
     const properties = feature?.properties ?? {};
 
-    return [properties.nom, properties.etiqueta].find(isPlausiblePlaceName) ?? "";
+    return (
+      [properties.nom, properties.etiqueta].find(isPlausiblePlaceName) ?? ""
+    );
   }
 
   async function consultarLloc(point) {
@@ -1220,7 +1271,8 @@
   // propers a allò que l'usuari està veient.
   function geocoderFocus() {
     if (view === "detail") {
-      if (selectedPoint) return { lat: selectedPoint.lat, lng: selectedPoint.lng };
+      if (selectedPoint)
+        return { lat: selectedPoint.lat, lng: selectedPoint.lng };
       return null;
     }
 
@@ -1467,7 +1519,13 @@
 
     map = new maplibregl.Map({
       container: mapContainer,
-      style: "https://geoserveis.icgc.cat/contextmaps/icgc_mapa_base_fosc.json",
+      // Estil base fosc local (`public/darkstyle.json`, còpia editada de
+      // l'OpenFreeMap dark: dades d'OpenStreetMap via OpenMapTiles). Es
+      // resol contra `document.baseURI` perquè la base de Vite és un
+      // subdirectori (`/utci-catalonia/`) i una ruta absoluta es trencaria
+      // a GitHub Pages. Les expressions de text es reescriuen a
+      // `aplicarIdiomaEtiquetes()` quan l'estil ja ha carregat.
+      style: new URL("darkstyle.json", document.baseURI).href,
       center: isNarrow ? [1.95, 41.72] : [1.7, 41.7],
       zoom: isNarrow ? 6.2 : 7.5,
       minZoom: 6,
@@ -1531,6 +1589,7 @@
 
     map.on("load", async () => {
       afegirHillshade();
+      aplicarIdiomaEtiquetes(language);
       map.resize();
 
       try {
@@ -1591,10 +1650,6 @@
         statusMessage = tr("forecastUnavailable");
       }
     });
-
-    // En creuar el llindar de zoom (ZOOM_DETALL) es reordena l'ancoratge del
-    // ràster; si l'ordre ja és el correcte, ordenarCapes() no fa res.
-    map.on("zoomend", ordenarCapes);
 
     map.on("click", (e) => {
       const point = {
@@ -1677,9 +1732,7 @@
           >/ {language === "ca" ? "Catalunya" : "Catalonia"}</span
         >
       </h1>
-      <p
-        class="truncate text-[10px] uppercase tracking-[0.2em] text-slate-500"
-      >
+      <p class="truncate text-[10px] uppercase tracking-[0.2em] text-slate-500">
         {tr("observatory")}
       </p>
     </div>
@@ -1922,9 +1975,8 @@
             aria-hidden="true"
           >
             {#if displayMode === "continuous"}
-              <span
-                class="flex-1"
-                style={`background:${rampGradientCss()}`}></span>
+              <span class="flex-1" style={`background:${rampGradientCss()}`}
+              ></span>
             {:else}
               {#each classes as item}
                 <span class="flex-1" style={`background:${item.c}`}></span>
@@ -1983,7 +2035,8 @@
             <p
               class="whitespace-nowrap text-[10px] uppercase tracking-[0.18em] text-slate-500"
             >
-              {badgeWeekday} {badgeDate}
+              {badgeWeekday}
+              {badgeDate}
             </p>
             <p class="mt-0.5 text-lg font-semibold leading-none text-teal-200">
               {badgeTime}
@@ -2027,26 +2080,19 @@
     {#if view === "detail"}
       <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <ForecastDetail
-          forecast={forecast}
-          language={language}
-          displayMode={displayMode}
+          {language}
+          {displayMode}
           point={selectedPoint}
           toponym={selectedToponym}
           municipality={selectedMunicipality}
-          loadingMunicipality={loadingMunicipality}
-          municipalityError={municipalityError}
           value={selectedValue}
           series={pointSeries}
           selectedHour={Number(selectedHour)}
-          loadingSeries={loadingSeries}
+          {loadingSeries}
           variables={diagValues}
           loadingVariables={loadingDiag}
           variablesAvailable={diagAvailable}
-          isPlaying={isPlaying}
           onSelectHour={(index) => (selectedHour = index)}
-          onPrev={() => changeHour(-1)}
-          onNext={() => changeHour(1)}
-          onTogglePlay={togglePlayback}
           onClose={() => (view = "map")}
           onCitySelect={selectCityPoint}
           onGeocodeSelect={selectGeocodedPoint}
@@ -2054,7 +2100,6 @@
         />
       </div>
     {/if}
-
   </main>
 
   <!-- Full de la llegenda per a pantalles petites. -->
