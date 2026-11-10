@@ -100,7 +100,7 @@
   // Opacitat del ràster sobre el mapa base. Els píxels PNG es bullen
   // opacs (alfa 255): tota la transparència ve d'aquesta opacitat, de
   // manera que no hi ha una segona dilució que enfosqueixi els colors.
-  const RASTER_OPACITY = 0.75;
+  const RASTER_OPACITY = 0.76;
   const RASTER_FADE_MS = 260;
 
   let seriesRequestId = 0;
