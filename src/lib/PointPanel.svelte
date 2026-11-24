@@ -421,11 +421,11 @@
       position: absolute;
       top: 0;
       right: 0;
-      bottom: auto;
+      bottom: 0;
       left: auto;
       width: 340px;
       height: auto;
-      max-height: calc(100% - 7rem);
+      max-height: 100%;
       overflow-y: auto;
       border: 0;
       border-left: 1px solid rgb(255 255 255 / 0.1);

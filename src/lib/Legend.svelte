@@ -40,7 +40,7 @@
           class="h-2.5 w-2.5 shrink-0 rounded-sm"
           style={`background:${item.c}`}
         ></span>
-        <span class="min-w-0 flex-1 text-xs text-slate-200">
+        <span class="min-w-0 flex-1 text-xs text-slate-200 xl:text-sm">
           {labelForClass(item, language)}
         </span>
         <span class="shrink-0 text-[10px] text-slate-500">
