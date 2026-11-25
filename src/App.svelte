@@ -19,14 +19,7 @@
     rampGradientCss,
   } from "./lib/utci-classes.js";
   import { referenceCities } from "./lib/cities.js";
-  import {
-    formatTime,
-    formatWeekdayShort,
-    formatDateShort,
-    formatShortDateTime,
-    relativeDayLabel,
-    firstVisibleIndex,
-  } from "./lib/time.js";
+  import { formatShortDateTime, firstVisibleIndex } from "./lib/time.js";
 
   proj4.defs(
     "EPSG:25831",
@@ -55,6 +48,10 @@
   let showMobileLegend = false;
   let showInfoSheet = false;
   let infoOpen = false;
+  let mobileSearchOpen = false;
+  let installPrompt = null;
+  let showInstallBanner = false;
+  let isIosInstall = false;
   let legendButton;
   let selectedMarker = null;
   let geolocateControl = null;
@@ -102,6 +99,7 @@
   // manera que no hi ha una segona dilució que enfosqueixi els colors.
   const RASTER_OPACITY = 0.76;
   const RASTER_FADE_MS = 260;
+  const INSTALL_DISMISSED_KEY = "pwa-install-dismissed";
 
   let seriesRequestId = 0;
   let seriesPointKey = null;
@@ -166,12 +164,6 @@
   $: activeForecast = forecast[Number(selectedHour)] ?? null;
   $: activeTime =
     activeForecast?.valid_time ?? activeForecast?.validTime ?? null;
-
-  // Etiquetes del badge de data que surten sobre el mapa.
-  $: badgeTime = formatTime(activeTime, language);
-  $: badgeWeekday = formatWeekdayShort(activeTime, language);
-  $: badgeDate = formatDateShort(activeTime, language);
-  $: badgeRelative = relativeDayLabel(activeTime, language);
 
   // Les etiquetes dels controls de MapLibre segueixen l'idioma.
   $: if (map && language) updateControlLabels();
@@ -1670,6 +1662,51 @@
     resizeObserver = new ResizeObserver(() => map?.resize());
     resizeObserver.observe(mapContainer);
 
+    function isStandaloneMode() {
+      return (
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone === true
+      );
+    }
+
+    function maybeShowInstallBanner() {
+      if (isStandaloneMode()) return;
+      if (localStorage.getItem(INSTALL_DISMISSED_KEY) === "1") return;
+
+      const mobileLike =
+        window.matchMedia("(max-width: 768px)").matches ||
+        /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+      if (!mobileLike) return;
+
+      // iOS no té beforeinstallprompt: mostrem una indicació manual.
+      const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+      if (ios) {
+        isIosInstall = true;
+        showInstallBanner = true;
+        return;
+      }
+
+      if (installPrompt) showInstallBanner = true;
+    }
+
+    function handleBeforeInstallPrompt(event) {
+      event.preventDefault();
+      installPrompt = event;
+      maybeShowInstallBanner();
+    }
+
+    function handleAppInstalled() {
+      installPrompt = null;
+      showInstallBanner = false;
+      isIosInstall = false;
+    }
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    maybeShowInstallBanner();
+
     window.addEventListener("keydown", handleKeydown);
 
     return () => {
@@ -1683,6 +1720,8 @@
 
       resizeObserver?.disconnect();
       window.removeEventListener("keydown", handleKeydown);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
 
       selectedMarker?.remove();
       selectedMarker = null;
@@ -1737,20 +1776,52 @@
       </p>
     </div>
 
-    <!-- Cercador de punts: a la part central de la barra; en pantalles
-         petites ocupa una segona fila a tot l'ample perquè sigui
-         còmode d'usar amb el dit. -->
+    <!-- Cercador: en escriptori sempre visible al centre; en mòbil es
+         desplega amb un botó per estalviar espai vertical. -->
     <div
-      class="order-3 w-full min-w-0 sm:order-none sm:w-auto sm:min-w-[200px] sm:max-w-md sm:flex-1"
+      class={mobileSearchOpen
+        ? "order-3 w-full min-w-0 sm:order-none sm:w-auto sm:min-w-[200px] sm:max-w-md sm:flex-1"
+        : "hidden sm:order-none sm:block sm:w-auto sm:min-w-[200px] sm:max-w-md sm:flex-1"}
     >
       <Geocoder
         {language}
         getFocus={geocoderFocus}
-        onSelect={selectGeocodedPoint}
+        onGeolocate={() => geolocateControl?.trigger()}
+        onSelect={(result) => {
+          mobileSearchOpen = false;
+          selectGeocodedPoint(result);
+        }}
       />
     </div>
 
     <div class="flex shrink-0 items-center gap-3 text-xs text-slate-400">
+      <button
+        type="button"
+        class={`flex h-9 w-9 items-center justify-center rounded-lg border transition-colors duration-150 sm:hidden ${
+          mobileSearchOpen
+            ? "border-teal-300/40 bg-teal-300/10 text-teal-200"
+            : "border-white/10 bg-[#0b1118] text-slate-300 hover:border-white/20 hover:text-slate-100"
+        }`}
+        aria-label={tr("searchPlaceholder")}
+        aria-expanded={mobileSearchOpen}
+        onclick={() => (mobileSearchOpen = !mobileSearchOpen)}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+      </button>
+
       <div
         class="flex items-center rounded-lg border border-white/10 bg-[#0b1118] p-0.5"
         role="group"
@@ -1800,44 +1871,35 @@
     class={view === "detail"
       ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
       : `grid min-h-0 min-w-0 flex-1 grid-cols-1
-         grid-rows-[max-content_minmax(320px,55dvh)]
-         overflow-x-hidden overflow-y-auto
+         grid-rows-[max-content_minmax(240px,1fr)]
+         overflow-hidden
          xl:grid-cols-[clamp(300px,23vw,390px)_minmax(0,1fr)]
-         xl:grid-rows-1 xl:overflow-hidden`}
+         xl:grid-rows-1`}
   >
     <aside
       class={`flex min-h-0 min-w-0 flex-col gap-4 border-t border-white/10 bg-[#101821] p-3 xl:overflow-y-auto xl:border-t-0 xl:border-r xl:p-4 ${view === "detail" ? "hidden" : ""}`}
     >
-      <section class="shrink-0">
-        <Timeline
-          {forecast}
-          {language}
-          selectedHour={Number(selectedHour)}
-          {isPlaying}
-          onPrev={() => changeHour(-1)}
-          onNext={() => changeHour(1)}
-          onTogglePlay={togglePlayback}
-          onSelectHour={(index) => (selectedHour = index)}
-        />
+      {#if forecastOutdated || errorMessage}
+        <section class="shrink-0 space-y-2">
+          {#if forecastOutdated}
+            <p
+              class="rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] text-amber-200"
+            >
+              {tr("forecastOutdated")}
+            </p>
+          {/if}
 
-        {#if forecastOutdated}
-          <p
-            class="mt-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] text-amber-200"
-          >
-            {tr("forecastOutdated")}
-          </p>
-        {/if}
+          {#if errorMessage}
+            <p
+              class="break-words rounded-lg border border-red-400/20 bg-red-400/5 p-2 text-[11px] text-red-200"
+            >
+              {tr(errorMessage)}
+            </p>
+          {/if}
+        </section>
 
-        {#if errorMessage}
-          <p
-            class="mt-2 break-words rounded-lg border border-red-400/20 bg-red-400/5 p-2 text-[11px] text-red-200"
-          >
-            {tr(errorMessage)}
-          </p>
-        {/if}
-      </section>
-
-      <div class="h-px bg-white/10"></div>
+        <div class="h-px bg-white/10"></div>
+      {/if}
 
       <!-- Mode de representació: categoritzat o rampa contínua. -->
       <section class="shrink-0">
@@ -1957,7 +2019,7 @@
 
       <!-- Botons flotants: només en pantalles petites. -->
       <div
-        class="absolute bottom-12 left-3 z-20 flex items-center gap-2 xl:hidden"
+        class="absolute bottom-3 left-3 z-20 flex items-center gap-2 xl:hidden"
       >
         <button
           type="button"
@@ -2023,35 +2085,7 @@
         </div>
       {/if}
 
-      <!-- Data i hora del fotograma actual. A mòbil no cal: el panell
-           temporal de dalt ja la mostra i es sobreposava amb els botons. -->
-      <div
-        class="pointer-events-none absolute bottom-4 left-1/2 z-10 hidden
-         -translate-x-1/2 rounded-xl border border-white/10
-         bg-[#101821]/95 px-4 py-2 shadow-lg backdrop-blur xl:flex"
-      >
-        <div class="flex items-center gap-3">
-          <div class="text-left">
-            <p
-              class="whitespace-nowrap text-[10px] uppercase tracking-[0.18em] text-slate-500"
-            >
-              {badgeWeekday}
-              {badgeDate}
-            </p>
-            <p class="mt-0.5 text-lg font-semibold leading-none text-teal-200">
-              {badgeTime}
-            </p>
-          </div>
 
-          {#if badgeRelative}
-            <span
-              class="rounded-full bg-teal-300/10 px-2 py-0.5 text-[10px] font-medium text-teal-200"
-            >
-              {badgeRelative}
-            </span>
-          {/if}
-        </div>
-      </div>
 
       <!-- Informació del punt: targeta flotant a l'escriptori, full al mòbil. -->
       <PointPanel
@@ -2075,6 +2109,7 @@
         onClose={closePointPanel}
         onSelectHour={(index) => (selectedHour = index)}
       />
+
     </section>
 
     {#if view === "detail"}
@@ -2101,6 +2136,21 @@
       </div>
     {/if}
   </main>
+
+  {#if view !== "detail"}
+    <div class="shrink-0">
+      <Timeline
+        {forecast}
+        {language}
+        selectedHour={Number(selectedHour)}
+        {isPlaying}
+        onPrev={() => changeHour(-1)}
+        onNext={() => changeHour(1)}
+        onTogglePlay={togglePlayback}
+        onSelectHour={(index) => (selectedHour = index)}
+      />
+    </div>
+  {/if}
 
   <!-- Full de la llegenda per a pantalles petites. -->
   <Sheet
@@ -2283,6 +2333,14 @@
     background: #101821 !important;
   }
 
+  /* En mòbil la geolocalització és dins el cercador; amaguem el
+     control del mapa per estalviar espai. */
+  @media (max-width: 639px) {
+    :global(.maplibregl-ctrl-geolocate) {
+      display: none !important;
+    }
+  }
+
   :global(.maplibregl-ctrl-attrib) {
     background: rgb(16 24 33 / 85%) !important;
     color: #a7b4c4 !important;
@@ -2291,4 +2349,5 @@
   :global(.maplibregl-ctrl-attrib a) {
     color: #67d9c1 !important;
   }
+
 </style>

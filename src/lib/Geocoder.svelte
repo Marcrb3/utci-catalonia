@@ -8,6 +8,7 @@
     // component hagi de dependre de la reactivitat del mapa.
     getFocus = () => null,
     onSelect = () => {},
+    onGeolocate = null,
   } = $props();
 
   // Geocodificador ICGC (GeoJSON): https://eines.icgc.cat/geocodificador/api-docs/
@@ -290,12 +291,37 @@
     autocorrect="off"
     spellcheck="false"
     enterkeyhint="search"
-    class="h-10 w-full rounded-lg border border-white/10 bg-[#0b1118] pl-9 pr-3 text-base text-slate-100 outline-none transition-colors duration-150 placeholder:text-slate-500 hover:border-white/20 focus:border-teal-300/40 focus:ring-2 focus:ring-teal-300/20"
+    class={`h-10 w-full rounded-lg border border-white/10 bg-[#0b1118] pl-9 text-base text-slate-100 outline-none transition-colors duration-150 placeholder:text-slate-500 hover:border-white/20 focus:border-teal-300/40 focus:ring-2 focus:ring-teal-300/20 ${onGeolocate ? "pr-10" : "pr-3"}`}
     oninput={handleInput}
     onkeydown={handleKeydown}
     onfocus={handleFocus}
     onblur={handleBlur}
   />
+
+  {#if onGeolocate}
+    <button
+      type="button"
+      class="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 transition-colors hover:text-teal-200"
+      aria-label={translate("geolocate", language)}
+      title={translate("geolocate", language)}
+      onclick={() => onGeolocate()}
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 2v3m0 14v3m10-10h-3M5 12H2" />
+      </svg>
+    </button>
+  {/if}
 
   {#if open}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
