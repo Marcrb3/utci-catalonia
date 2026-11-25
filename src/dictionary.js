@@ -123,7 +123,17 @@ export const translations = {
         cityList: "Ciutats de referència",
         stressPeriods: "Períodes amb estrès tèrmic",
         noStressPeriods: "Cap període amb estrès tèrmic",
-        heatwave: "Estrès tèrmic"
+        heatwave: "Estrès tèrmic",
+        settings: "Configuració",
+        timeFilter: "Filtre horari",
+        filterAll: "Totes",
+        filterDay: "Diürnes",
+        filterNight: "Nocturnes",
+        basemap: "Mapa base",
+        basemapDark: "Fosc",
+        basemapLight: "Clar",
+        basemapLiberty: "Liberty",
+        feedback: "Suggeriments"
     },
 
     en: {
@@ -248,7 +258,17 @@ export const translations = {
         cityList: "Reference cities",
         stressPeriods: "Thermal stress periods",
         noStressPeriods: "No thermal stress periods",
-        heatwave: "Thermal stress"
+        heatwave: "Thermal stress",
+        settings: "Settings",
+        timeFilter: "Time filter",
+        filterAll: "All",
+        filterDay: "Daytime",
+        filterNight: "Nighttime",
+        basemap: "Basemap",
+        basemapDark: "Dark",
+        basemapLight: "Light",
+        basemapLiberty: "Liberty",
+        feedback: "Suggestions"
     }
 };
 

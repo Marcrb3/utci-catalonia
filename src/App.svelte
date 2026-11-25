@@ -48,6 +48,7 @@
   let showMobileLegend = false;
   let showInfoSheet = false;
   let infoOpen = false;
+  let showMobileSettings = false;
   let mobileSearchOpen = false;
   let installPrompt = null;
   let showInstallBanner = false;
@@ -56,12 +57,25 @@
   let selectedMarker = null;
   let geolocateControl = null;
   let geoError = "";
+  let geoErrorTimer;
+  let clickHintVisible = false;
+  let clickHintShown = false;
+  let clickHintTimer;
+  let basemap =
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem("utci-basemap") || "dark"
+      : "dark";
+  let timeFilter =
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem("utci-time-filter") || "all"
+      : "all";
   //API Territorial
   let selectedMunicipality = "";
   let loadingMunicipality = false;
   let municipalityError = "";
   let municipalityRequestId = 0;
 
+  let allForecast = [];
   let forecast = [];
   let loadingForecast = true;
   let loadingRaster = false;
@@ -100,6 +114,19 @@
   const RASTER_OPACITY = 0.76;
   const RASTER_FADE_MS = 260;
   const INSTALL_DISMISSED_KEY = "pwa-install-dismissed";
+  const BASEMAPS = [
+    { id: "dark", labelKey: "basemapDark", style: "./darkstyle.json" },
+    {
+      id: "liberty",
+      labelKey: "basemapLiberty",
+      style: "https://tiles.openfreemap.org/styles/liberty",
+    },
+    {
+      id: "positron",
+      labelKey: "basemapLight",
+      style: "https://tiles.openfreemap.org/styles/positron",
+    },
+  ];
 
   let seriesRequestId = 0;
   let seriesPointKey = null;
@@ -165,6 +192,19 @@
   $: activeTime =
     activeForecast?.valid_time ?? activeForecast?.validTime ?? null;
 
+  // Suggeriment inicial: es mostra un cop i desapareix sol.
+  $: if (!initialMapLoading && !clickHintShown && !selectedPoint) {
+    clickHintShown = true;
+    clickHintVisible = true;
+    clearTimeout(clickHintTimer);
+    clickHintTimer = setTimeout(() => (clickHintVisible = false), 9000);
+  }
+
+  $: if (selectedPoint && clickHintVisible) {
+    clickHintVisible = false;
+    clearTimeout(clickHintTimer);
+  }
+
   // Les etiquetes dels controls de MapLibre segueixen l'idioma.
   $: if (map && language) updateControlLabels();
 
@@ -227,6 +267,73 @@
     }
 
     return new URL(path, document.baseURI).href;
+  }
+
+  function basemapStyle(id) {
+    const entry = BASEMAPS.find((b) => b.id === id) ?? BASEMAPS[0];
+
+    if (entry.style.startsWith("http")) return entry.style;
+
+    return new URL(entry.style, document.baseURI).href;
+  }
+
+  function madridHour(item) {
+    const value = item?.valid_time ?? item?.validTime;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+
+    return Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Madrid",
+        hour: "2-digit",
+        hourCycle: "h23",
+      }).format(date),
+    );
+  }
+
+  function matchesTimeFilter(item, filter = timeFilter) {
+    if (filter === "all") return true;
+
+    const hour = madridHour(item);
+    if (hour === null) return true;
+
+    const isDay = hour >= 7 && hour < 21;
+    return filter === "day" ? isDay : !isDay;
+  }
+
+  function applyTimeFilter(nextFilter = timeFilter) {
+    const current = forecast[Number(selectedHour)] ?? null;
+    const currentTime = current?.valid_time ?? current?.validTime ?? null;
+    const next = allForecast.filter((item) => matchesTimeFilter(item, nextFilter));
+
+    forecast = next;
+    preloadPromise = null;
+
+    if (!forecast.length) {
+      selectedHour = 0;
+      return;
+    }
+
+    if (currentTime) {
+      const idx = forecast.findIndex(
+        (item) => (item.valid_time ?? item.validTime) === currentTime,
+      );
+      if (idx >= 0) {
+        selectedHour = idx;
+        return;
+      }
+    }
+
+    selectedHour = Math.max(0, Math.min(selectedHour, forecast.length - 1));
+  }
+
+  function setTimeFilter(filter) {
+    if (filter === timeFilter) return;
+    timeFilter = filter;
+    try { localStorage.setItem("utci-time-filter", filter); } catch {}
+    if (!allForecast.length) return;
+    applyTimeFilter(filter);
+    preloadAllRasters();
   }
 
   const TERRAIN_URL = "https://tiles.mapterhorn.com/tilejson.json";
@@ -676,6 +783,56 @@
         console.warn("No s'ha pogut fer el cross-fade del ràster:", error);
       });
     }
+  }
+
+  // Reafegeix el ràster després d'un canvi d'estil de mapa base.
+  function restoreRasterLayer(prepared) {
+    if (!map || destroyed || !prepared) return;
+    if (map.getSource("utci-raster-source")) return;
+
+    map.addSource("utci-raster-source", {
+      type: "image",
+      url: prepared.imageUrl,
+      coordinates: prepared.coordinates,
+    });
+    map.addLayer({
+      id: "utci-raster-layer",
+      type: "raster",
+      source: "utci-raster-source",
+      paint: {
+        "raster-opacity": RASTER_OPACITY,
+        "raster-resampling": "nearest",
+      },
+    });
+    map.addSource("utci-raster-prev-source", {
+      type: "image",
+      url: prepared.imageUrl,
+      coordinates: prepared.coordinates,
+    });
+    map.addLayer({
+      id: "utci-raster-prev-layer",
+      type: "raster",
+      source: "utci-raster-prev-source",
+      paint: {
+        "raster-opacity": 0,
+        "raster-resampling": "nearest",
+      },
+    });
+    ordenarCapes();
+  }
+
+  function changeBasemap(id) {
+    if (id === basemap || !BASEMAPS.some((b) => b.id === id)) return;
+
+    basemap = id;
+
+    try {
+      localStorage.setItem("utci-basemap", id);
+    } catch {}
+
+    if (!map) return;
+
+    map.setStyle(basemapStyle(id));
   }
 
   // Espera que la font d'una imatge estigui carregada (amb límit de temps).
@@ -1511,13 +1668,9 @@
 
     map = new maplibregl.Map({
       container: mapContainer,
-      // Estil base fosc local (`public/darkstyle.json`, còpia editada de
-      // l'OpenFreeMap dark: dades d'OpenStreetMap via OpenMapTiles). Es
-      // resol contra `document.baseURI` perquè la base de Vite és un
-      // subdirectori (`/utci-catalonia/`) i una ruta absoluta es trencaria
-      // a GitHub Pages. Les expressions de text es reescriuen a
-      // `aplicarIdiomaEtiquetes()` quan l'estil ja ha carregat.
-      style: new URL("darkstyle.json", document.baseURI).href,
+      // Estil base: fosc local per defecte, o un estil d'OpenFreeMap
+      // triat per l'usuari (persistit a localStorage).
+      style: basemapStyle(basemap),
       center: isNarrow ? [1.95, 41.72] : [1.7, 41.7],
       zoom: isNarrow ? 6.2 : 7.5,
       minZoom: 6,
@@ -1555,6 +1708,7 @@
     map.addControl(new maplibregl.NavigationControl(), "bottom-right");
 
     geolocateControl.on("geolocate", (event) => {
+      clearTimeout(geoErrorTimer);
       geoError = "";
 
       const point = { lng: event.lngLat.lng, lat: event.lngLat.lat };
@@ -1575,9 +1729,17 @@
       console.warn("Error de geolocalització:", event.error);
 
       geoError = "geolocationError";
+      clearTimeout(geoErrorTimer);
+      geoErrorTimer = setTimeout(() => (geoError = ""), 4500);
     });
 
     updateControlLabels();
+
+    map.on("style.load", () => {
+      afegirHillshade();
+      aplicarIdiomaEtiquetes(language);
+      if (displayedPrepared) restoreRasterLayer(displayedPrepared);
+    });
 
     map.on("load", async () => {
       afegirHillshade();
@@ -1621,14 +1783,15 @@
         // pel darrer pas anterior a «ara».
         const start = firstVisibleIndex(sorted, new Date());
 
-        forecast = sorted.slice(start);
+        allForecast = sorted.slice(start);
+        applyTimeFilter(timeFilter);
 
-        if (!forecast.length) {
+        if (!allForecast.length) {
           throw new Error("No s'han trobat entrades de TIFF al manifest.");
         }
 
         // El manifest ja no cobreix el moment actual.
-        const last = forecast[forecast.length - 1];
+        const last = allForecast[allForecast.length - 1];
         const lastTime = new Date(last.valid_time || last.validTime || 0);
 
         forecastOutdated = lastTime.getTime() < Date.now();
@@ -1712,6 +1875,8 @@
     return () => {
       destroyed = true;
       stopPlayback();
+      clearTimeout(clickHintTimer);
+      clearTimeout(geoErrorTimer);
 
       requestId += 1;
       seriesRequestId += 1;
@@ -1860,6 +2025,17 @@
           onclick={() => (language = "en")}>EN</button
         >
       </div>
+      <a
+        href="mailto:marcrb3@gmail.com"
+        class="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-slate-300 sm:flex"
+        aria-label={tr("feedback")}
+        title={tr("feedback")}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="m3 7 9 6 9-6" />
+        </svg>
+      </a>
       <span
         class={`h-2 w-2 rounded-full ${errorMessage ? "bg-red-400" : loadingForecast || loadingRaster ? "bg-amber-400" : "bg-emerald-400"}`}
       ></span>
@@ -1902,7 +2078,7 @@
       {/if}
 
       <!-- Mode de representació: categoritzat o rampa contínua. -->
-      <section class="shrink-0">
+      <section class="hidden shrink-0 xl:block">
         <h2
           class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
         >
@@ -1928,6 +2104,66 @@
             >{tr("modeContinuous")}</button
           >
         </div>
+      </section>
+
+      <!-- Configuració i visualització -->
+      <section class="hidden shrink-0 xl:block">
+        <h2
+          class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400"
+        >
+          {tr("settings")}
+        </h2>
+
+        <!-- Filtre horari: diürn / tot / nocturn -->
+        <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
+          <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            {tr("timeFilter")}
+          </p>
+
+          <div
+            class="flex rounded-lg border border-white/10 bg-[#0b1118] p-0.5"
+            role="group"
+            aria-label={tr("timeFilter")}
+          >
+            <button
+              type="button"
+              class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${timeFilter === "all" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+              aria-pressed={timeFilter === "all"}
+              onclick={() => setTimeFilter("all")}>{tr("filterAll")}</button
+            >
+            <button
+              type="button"
+              class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${timeFilter === "day" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+              aria-pressed={timeFilter === "day"}
+              onclick={() => setTimeFilter("day")}>{tr("filterDay")}</button
+            >
+            <button
+              type="button"
+              class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${timeFilter === "night" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+              aria-pressed={timeFilter === "night"}
+              onclick={() => setTimeFilter("night")}>{tr("filterNight")}</button
+            >
+          </div>
+        </div>
+
+        <!-- Mapa base -->
+        <div class="mt-4 rounded-xl border border-white/10 bg-[#0b1118] p-3">
+          <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            {tr("basemap")}
+          </p>
+
+          <div class="flex flex-wrap gap-1.5">
+            {#each BASEMAPS as b (b.id)}
+              <button
+                type="button"
+                class={`rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${basemap === b.id ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+                aria-pressed={basemap === b.id}
+                onclick={() => changeBasemap(b.id)}>{tr(b.labelKey)}</button
+              >
+            {/each}
+          </div>
+        </div>
+
       </section>
 
       <section class="hidden xl:block">
@@ -1972,6 +2208,13 @@
           </div>
         </div>
       </section>
+
+      <a
+        href="mailto:marcrb3@gmail.com"
+        class="mt-auto hidden pt-2 text-[11px] text-slate-500 transition-colors hover:text-slate-300 xl:block"
+      >
+        {tr("feedback")}
+      </a>
     </aside>
 
     <section
@@ -2063,6 +2306,34 @@
 
           {tr("infoButton")}
         </button>
+
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-full border border-white/15
+                 bg-[#101821]/95 px-3 py-2 text-[11px] font-medium text-slate-100
+                 shadow-lg backdrop-blur transition-transform active:scale-[0.97]"
+          aria-haspopup="dialog"
+          aria-expanded={showMobileSettings}
+          aria-label={tr("settings")}
+          onclick={() => (showMobileSettings = true)}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2v3m0 14v3m10-10h-3M5 12H2" />
+          </svg>
+
+          {tr("settings")}
+        </button>
       </div>
 
       <!-- Suggeriment per invitar a clicar el mapa. -->
@@ -2075,7 +2346,7 @@
         >
           {tr(geoError)}
         </div>
-      {:else if !selectedPoint && !initialMapLoading}
+      {:else if clickHintVisible && !selectedPoint}
         <div
           class="pointer-events-none absolute top-3 left-1/2 z-10
                  -translate-x-1/2 rounded-full border border-white/10
@@ -2172,6 +2443,88 @@
     onClose={() => (showInfoSheet = false)}
   >
     <InfoPanel {language} />
+  </Sheet>
+
+  <!-- Full de configuració per a pantalles petites. -->
+  <Sheet
+    bind:open={showMobileSettings}
+    title={tr("settings")}
+    closeLabel={tr("close")}
+    resizeLabel={tr("resizePanel")}
+    onClose={() => (showMobileSettings = false)}
+  >
+    <div class="space-y-4">
+      <section>
+        <h3 class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+          {tr("displayMode")}
+        </h3>
+        <div class="flex rounded-lg border border-white/10 bg-[#0b1118] p-0.5">
+          <button
+            type="button"
+            class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${displayMode === "utci" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+            aria-pressed={displayMode === "utci"}
+            onclick={() => selectMode("utci")}>{tr("modeUtci")}</button
+          >
+          <button
+            type="button"
+            class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${displayMode === "continuous" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+            aria-pressed={displayMode === "continuous"}
+            onclick={() => selectMode("continuous")}>{tr("modeContinuous")}</button
+          >
+        </div>
+      </section>
+
+      <section>
+        <h3 class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+          {tr("timeFilter")}
+        </h3>
+        <div class="flex rounded-lg border border-white/10 bg-[#0b1118] p-0.5">
+          <button
+            type="button"
+            class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${timeFilter === "all" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+            aria-pressed={timeFilter === "all"}
+            onclick={() => setTimeFilter("all")}>{tr("filterAll")}</button
+          >
+          <button
+            type="button"
+            class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${timeFilter === "day" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+            aria-pressed={timeFilter === "day"}
+            onclick={() => setTimeFilter("day")}>{tr("filterDay")}</button
+          >
+          <button
+            type="button"
+            class={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${timeFilter === "night" ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+            aria-pressed={timeFilter === "night"}
+            onclick={() => setTimeFilter("night")}>{tr("filterNight")}</button
+          >
+        </div>
+      </section>
+
+      <section>
+        <h3 class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+          {tr("basemap")}
+        </h3>
+        <div class="flex flex-wrap gap-1.5">
+          {#each BASEMAPS as b (b.id)}
+            <button
+              type="button"
+              class={`rounded-md px-2 py-1.5 text-xs transition-colors duration-150 active:scale-[0.95] ${basemap === b.id ? "bg-teal-300/15 text-teal-200" : "text-slate-400 hover:text-slate-200"}`}
+              aria-pressed={basemap === b.id}
+              onclick={() => changeBasemap(b.id)}>{tr(b.labelKey)}</button
+            >
+          {/each}
+        </div>
+      </section>
+
+      <section class="pt-2 border-t border-white/10">
+        <a
+          class="text-[11px] text-slate-500 hover:text-slate-300 transition-colors"
+          href="mailto:marcrb3@gmail.com"
+        >
+          {tr("feedback")}
+        </a>
+      </section>
+    </div>
   </Sheet>
 </div>
 
@@ -2333,12 +2686,9 @@
     background: #101821 !important;
   }
 
-  /* En mòbil la geolocalització és dins el cercador; amaguem el
-     control del mapa per estalviar espai. */
-  @media (max-width: 639px) {
-    :global(.maplibregl-ctrl-geolocate) {
-      display: none !important;
-    }
+  /* La geolocalització ja és al cercador; amaguem el control del mapa. */
+  :global(.maplibregl-ctrl-geolocate) {
+    display: none !important;
   }
 
   :global(.maplibregl-ctrl-attrib) {

@@ -17,8 +17,8 @@
   } = $props();
 
   const WIDTH = 320;
-  const HEIGHT = 168;
-  const PAD = { top: 14, right: 10, bottom: 26, left: 34 };
+  const HEIGHT = 176;
+  const PAD = { top: 14, right: 12, bottom: 30, left: 36 };
 
   const PLOT_LEFT = PAD.left;
   const PLOT_RIGHT = WIDTH - PAD.right;
@@ -135,21 +135,26 @@
     })),
   );
 
-  // Marques de dia a l'eix horitzontal.
+  // Marques de dia a l'eix horitzontal. Amb previsions llargues es
+  // mostren només les que tenen espai per no solapar-se.
   const dayMarks = $derived.by(() => {
     const marks = [];
     let lastKey = null;
+    let lastX = -Infinity;
 
     for (const point of plotted) {
       const key = dayKey(point.time);
 
       if (!key || key === lastKey) continue;
 
-      marks.push({
-        key,
-        x: point.x,
-        label: formatDateShort(point.time, language),
-      });
+      if (point.x - lastX >= 42 || marks.length === 0) {
+        marks.push({
+          key,
+          x: point.x,
+          label: formatDateShort(point.time, language),
+        });
+        lastX = point.x;
+      }
 
       lastKey = key;
     }
@@ -260,8 +265,8 @@
     >
       <defs>
         <linearGradient id="chart-area" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#67d9c1" stop-opacity="0.28" />
-          <stop offset="100%" stop-color="#67d9c1" stop-opacity="0" />
+          <stop offset="0%" stop-color="#67d9c1" stop-opacity="0.22" />
+          <stop offset="100%" stop-color="#67d9c1" stop-opacity="0.02" />
         </linearGradient>
       </defs>
 
@@ -273,14 +278,14 @@
           x2={PLOT_RIGHT}
           y2={scaleY(tick)}
           stroke="#64748b"
-          stroke-opacity="0.22"
-          stroke-dasharray="3 3"
+          stroke-opacity="0.16"
+          stroke-dasharray="4 4"
         />
         <text
-          x={PLOT_LEFT - 6}
-          y={scaleY(tick) + 4}
-          fill="#94a3b8"
-          font-size="8"
+          x={PLOT_LEFT - 7}
+          y={scaleY(tick) + 3.5}
+          fill="#a8b3c2"
+          font-size="9.5"
           text-anchor="end">{tick}°</text
         >
       {/each}
@@ -299,8 +304,8 @@
         <text
           x={mark.x + 3}
           y={HEIGHT - 8}
-          fill="#94a3b8"
-          font-size="8">{mark.label}</text
+          fill="#a8b3c2"
+          font-size="9.5">{mark.label}</text
         >
       {/each}
 
@@ -350,8 +355,9 @@
           x2={segment.x2}
           y2={segment.y2}
           stroke={segment.color}
-          stroke-width="2.5"
+          stroke-width="2.75"
           stroke-linecap="round"
+          stroke-linejoin="round"
         />
       {/each}
 
@@ -363,23 +369,34 @@
           x2={selected.x}
           y2={PLOT_BOTTOM}
           stroke="#67d9c1"
-          stroke-opacity="0.75"
-          stroke-width="1.5"
+          stroke-opacity="0.45"
+          stroke-width="1"
         />
+        {#if selected.y !== null}
+          <circle
+            cx={selected.x}
+            cy={selected.y}
+            r="8"
+            fill={colorForValue(selected.value, displayMode)}
+            opacity="0.18"
+          />
+        {/if}
       {/if}
 
-      <!-- Punts. -->
+      <!-- Punts: amb previsions llargues només es marca el seleccionat. -->
       {#each validPlotted as point (point.index)}
-        <circle
-          cx={point.x}
-          cy={point.y}
-          r={point.index === Number(selectedHour) ? 4.5 : 2.6}
-          fill={colorForValue(point.value, displayMode)}
-          stroke={point.index === Number(selectedHour) ? "#ffffff" : "#0b1118"}
-          stroke-width={point.index === Number(selectedHour) ? 1.5 : 0.7}
-        >
-          <title>{`${point.label}: ${point.value.toFixed(1)} °C`}</title>
-        </circle>
+        {#if series.length <= 48 || point.index === Number(selectedHour) || point.index === hovered}
+          <circle
+            cx={point.x}
+            cy={point.y}
+            r={point.index === Number(selectedHour) ? 4.8 : 3}
+            fill={colorForValue(point.value, displayMode)}
+            stroke={point.index === Number(selectedHour) ? "#ffffff" : "#0b1118"}
+            stroke-width={point.index === Number(selectedHour) ? 1.8 : 0.8}
+          >
+            <title>{`${point.label}: ${point.value.toFixed(1)} °C`}</title>
+          </circle>
+        {/if}
       {/each}
 
       <!-- Etiqueta del punt que es mou amb el ratolí. -->
@@ -397,8 +414,8 @@
           <text
             x={Math.min(Math.max(hoverPoint.x, PLOT_LEFT + 30), PLOT_RIGHT - 30)}
             y={Math.max(hoverPoint.y - 10, 10)}
-            fill="#e2e8f0"
-            font-size="8"
+            fill="#f1f5f9"
+            font-size="9.5"
             text-anchor="middle">{hoverPoint.value.toFixed(1)}°</text
           >
         </g>

@@ -51,6 +51,7 @@
   let sheetHeight = $state(null);
   let currentHeight = $state(0);
   let expanded = $state(false);
+  let calculationOpen = $state(false);
   let dragged = false;
   let startHeight = 0;
 
@@ -253,115 +254,143 @@
     {#if variablesAvailable}
       <div class="mt-2 px-4 pb-4">
         <div class="rounded-xl border border-white/10 bg-[#0b1118] p-3">
-          <div class="mb-2 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between gap-2 text-left"
+            aria-expanded={calculationOpen}
+            onclick={() => (calculationOpen = !calculationOpen)}
+          >
             <h3
               class="text-[11px] font-semibold uppercase tracking-widest text-slate-400"
             >
               {translate("calculationTitle", language)}
             </h3>
 
-            {#if loadingVariables}
-              <span class="text-[10px] text-amber-300">
-                {translate("calculating", language)}
-              </span>
-            {/if}
-          </div>
+            <span class="flex shrink-0 items-center gap-2">
+              {#if loadingVariables}
+                <span class="text-[10px] text-amber-300">
+                  {translate("calculating", language)}
+                </span>
+              {/if}
 
-          <p class="mb-3 text-[11px] leading-relaxed text-slate-400">
-            {translate("calculationIntro", language)}
-          </p>
-
-          <div class="space-y-3">
-            <section>
-              <h4
-                class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                aria-hidden="true"
+                class={`text-slate-500 motion-safe:transition-transform motion-safe:duration-200 ${calculationOpen ? "rotate-180" : ""}`}
               >
-                {translate("originalData", language)}
-              </h4>
+                <path
+                  d="M2.5 4.5 6 8l3.5-3.5"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </span>
+          </button>
 
-              <dl class="space-y-1">
-                {#each ORIGINAL_ROWS as row (row.key)}
-                  <div
-                    class="flex items-baseline justify-between gap-3 border-b border-white/5 pb-1 last:border-0 last:pb-0"
-                  >
-                    <dt class="text-[11px] leading-tight text-slate-400">
-                      {translate(row.labelKey, language)}
-                    </dt>
-
-                    <dd
-                      class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
-                    >
-                      {formatVariable(row, variables?.[row.key])}
-                    </dd>
-                  </div>
-                {/each}
-              </dl>
-            </section>
-
-            <section>
-              <h4
-                class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
-              >
-                {translate("usedData", language)}
-              </h4>
-
-              <dl class="space-y-1">
-                {#each USED_ROWS as row (row.key)}
-                  <div
-                    class="flex items-baseline justify-between gap-3 border-b border-white/5 pb-1 last:border-0 last:pb-0"
-                  >
-                    <dt class="text-[11px] leading-tight text-slate-400">
-                      {translate(row.labelKey, language)}
-                    </dt>
-
-                    <dd
-                      class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
-                    >
-                      {formatVariable(row, variables?.[row.key])}
-                    </dd>
-                  </div>
-                {/each}
-              </dl>
-            </section>
-
-            <section class="border-t border-white/10 pt-2">
-              <h4
-                class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
-              >
-                {translate("comparisonsTitle", language)}
-              </h4>
-
-              <dl class="space-y-1">
-                <div class="flex items-baseline justify-between gap-3">
-                  <dt class="text-[11px] leading-tight text-slate-400">
-                    {translate("airTemperatureDifference", language)}
-                  </dt>
-                  <dd
-                    class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
-                  >
-                    {formatDifference(airTemperatureDifference)}
-                  </dd>
-                </div>
-
-                {#if value}
-                  <div class="flex items-baseline justify-between gap-3">
-                    <dt class="text-[11px] leading-tight text-slate-400">
-                      {translate("utciAirTemperatureDifference", language)}
-                    </dt>
-                    <dd
-                      class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
-                    >
-                      {formatDifference(utciAirTemperatureDifference)}
-                    </dd>
-                  </div>
-                {/if}
-              </dl>
-
-              <p class="mt-2 text-[10px] leading-relaxed text-slate-500">
-                {translate("calculationNote", language)}
+          {#if calculationOpen}
+            <div class="mt-2">
+              <p class="mb-3 text-[11px] leading-relaxed text-slate-400">
+                {translate("calculationIntro", language)}
               </p>
-            </section>
-          </div>
+
+              <div class="space-y-3">
+                <section>
+                  <h4
+                    class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+                  >
+                    {translate("originalData", language)}
+                  </h4>
+
+                  <dl class="space-y-1">
+                    {#each ORIGINAL_ROWS as row (row.key)}
+                      <div
+                        class="flex items-baseline justify-between gap-3 border-b border-white/5 pb-1 last:border-0 last:pb-0"
+                      >
+                        <dt class="text-[11px] leading-tight text-slate-400">
+                          {translate(row.labelKey, language)}
+                        </dt>
+
+                        <dd
+                          class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                        >
+                          {formatVariable(row, variables?.[row.key])}
+                        </dd>
+                      </div>
+                    {/each}
+                  </dl>
+                </section>
+
+                <section>
+                  <h4
+                    class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+                  >
+                    {translate("usedData", language)}
+                  </h4>
+
+                  <dl class="space-y-1">
+                    {#each USED_ROWS as row (row.key)}
+                      <div
+                        class="flex items-baseline justify-between gap-3 border-b border-white/5 pb-1 last:border-0 last:pb-0"
+                      >
+                        <dt class="text-[11px] leading-tight text-slate-400">
+                          {translate(row.labelKey, language)}
+                        </dt>
+
+                        <dd
+                          class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                        >
+                          {formatVariable(row, variables?.[row.key])}
+                        </dd>
+                      </div>
+                    {/each}
+                  </dl>
+                </section>
+
+                <section class="border-t border-white/10 pt-2">
+                  <h4
+                    class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-teal-200/80"
+                  >
+                    {translate("comparisonsTitle", language)}
+                  </h4>
+
+                  <dl class="space-y-1">
+                    <div class="flex items-baseline justify-between gap-3">
+                      <dt class="text-[11px] leading-tight text-slate-400">
+                        {translate("airTemperatureDifference", language)}
+                      </dt>
+                      <dd
+                        class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                      >
+                        {formatDifference(airTemperatureDifference)}
+                      </dd>
+                    </div>
+
+                    {#if value}
+                      <div class="flex items-baseline justify-between gap-3">
+                        <dt class="text-[11px] leading-tight text-slate-400">
+                          {translate("utciAirTemperatureDifference", language)}
+                        </dt>
+                        <dd
+                          class="shrink-0 font-mono text-[11px] tabular-nums text-slate-200"
+                        >
+                          {formatDifference(utciAirTemperatureDifference)}
+                        </dd>
+                      </div>
+                    {/if}
+                  </dl>
+
+                  <p class="mt-2 text-[10px] leading-relaxed text-slate-500">
+                    {translate("calculationNote", language)}
+                  </p>
+                </section>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
     {/if}
@@ -423,7 +452,7 @@
       right: 0;
       bottom: 0;
       left: auto;
-      width: 340px;
+      width: 400px;
       height: auto;
       max-height: 100%;
       overflow-y: auto;
