@@ -1,183 +1,8 @@
 {
-  "generated_at": "2026-11-25T09:18:04.574644+00:00",
-  "count": 58,
+  "generated_at": "2026-11-28T10:57:07.053239+00:00",
+  "count": 61,
   "resolution_m": 250,
   "files": [
-    {
-      "filename": "utci_2026-11-25T09-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-25T09-00-00.000000000.tif",
-      "valid_time": "2026-11-25T09:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-25T09-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-25T12-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-25T12-00-00.000000000.tif",
-      "valid_time": "2026-11-25T12:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-25T12-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-25T15-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-25T15-00-00.000000000.tif",
-      "valid_time": "2026-11-25T15:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-25T15-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-25T18-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-25T18-00-00.000000000.tif",
-      "valid_time": "2026-11-25T18:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-25T18-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-25T21-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-25T21-00-00.000000000.tif",
-      "valid_time": "2026-11-25T21:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-25T21-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-26T00-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-26T00-00-00.000000000.tif",
-      "valid_time": "2026-11-26T00:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-26T00-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-26T03-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-26T03-00-00.000000000.tif",
-      "valid_time": "2026-11-26T03:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-26T03-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-26T06-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-26T06-00-00.000000000.tif",
-      "valid_time": "2026-11-26T06:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-26T06-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-26T09-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-26T09-00-00.000000000.tif",
-      "valid_time": "2026-11-26T09:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-26T09-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-26T12-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-26T12-00-00.000000000.tif",
-      "valid_time": "2026-11-26T12:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-26T12-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-26T15-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-26T15-00-00.000000000.tif",
-      "valid_time": "2026-11-26T15:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-26T15-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-26T18-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-26T18-00-00.000000000.tif",
-      "valid_time": "2026-11-26T18:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-26T18-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-26T21-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-26T21-00-00.000000000.tif",
-      "valid_time": "2026-11-26T21:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-26T21-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-27T00-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-27T00-00-00.000000000.tif",
-      "valid_time": "2026-11-27T00:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-27T00-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-27T03-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-27T03-00-00.000000000.tif",
-      "valid_time": "2026-11-27T03:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-27T03-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-27T06-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-27T06-00-00.000000000.tif",
-      "valid_time": "2026-11-27T06:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-27T06-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-27T09-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-27T09-00-00.000000000.tif",
-      "valid_time": "2026-11-27T09:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-27T09-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-27T12-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-27T12-00-00.000000000.tif",
-      "valid_time": "2026-11-27T12:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-27T12-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-27T15-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-27T15-00-00.000000000.tif",
-      "valid_time": "2026-11-27T15:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-27T15-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-27T18-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-27T18-00-00.000000000.tif",
-      "valid_time": "2026-11-27T18:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-27T18-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-27T21-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-27T21-00-00.000000000.tif",
-      "valid_time": "2026-11-27T21:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-27T21-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-28T00-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-28T00-00-00.000000000.tif",
-      "valid_time": "2026-11-28T00:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-28T00-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-28T03-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-28T03-00-00.000000000.tif",
-      "valid_time": "2026-11-28T03:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-28T03-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-28T06-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-28T06-00-00.000000000.tif",
-      "valid_time": "2026-11-28T06:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-28T06-00-00.000000000.tif"
-    },
-    {
-      "filename": "utci_2026-11-28T09-00-00.000000000.tif",
-      "url": "./data/utci_2026-11-28T09-00-00.000000000.tif",
-      "valid_time": "2026-11-28T09:00:00.000000000Z",
-      "resolution_m": 250,
-      "diag_url": "./data/diag_2026-11-28T09-00-00.000000000.tif"
-    },
     {
       "filename": "utci_2026-11-28T12-00-00.000000000.tif",
       "url": "./data/utci_2026-11-28T12-00-00.000000000.tif",
@@ -298,11 +123,25 @@
       "diag_url": "./data/diag_2026-11-30T12-00-00.000000000.tif"
     },
     {
+      "filename": "utci_2026-11-30T15-00-00.000000000.tif",
+      "url": "./data/utci_2026-11-30T15-00-00.000000000.tif",
+      "valid_time": "2026-11-30T15:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-11-30T15-00-00.000000000.tif"
+    },
+    {
       "filename": "utci_2026-11-30T18-00-00.000000000.tif",
       "url": "./data/utci_2026-11-30T18-00-00.000000000.tif",
       "valid_time": "2026-11-30T18:00:00.000000000Z",
       "resolution_m": 250,
       "diag_url": "./data/diag_2026-11-30T18-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-11-30T21-00-00.000000000.tif",
+      "url": "./data/utci_2026-11-30T21-00-00.000000000.tif",
+      "valid_time": "2026-11-30T21:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-11-30T21-00-00.000000000.tif"
     },
     {
       "filename": "utci_2026-12-01T00-00-00.000000000.tif",
@@ -312,11 +151,25 @@
       "diag_url": "./data/diag_2026-12-01T00-00-00.000000000.tif"
     },
     {
+      "filename": "utci_2026-12-01T03-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-01T03-00-00.000000000.tif",
+      "valid_time": "2026-12-01T03:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-01T03-00-00.000000000.tif"
+    },
+    {
       "filename": "utci_2026-12-01T06-00-00.000000000.tif",
       "url": "./data/utci_2026-12-01T06-00-00.000000000.tif",
       "valid_time": "2026-12-01T06:00:00.000000000Z",
       "resolution_m": 250,
       "diag_url": "./data/diag_2026-12-01T06-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-01T09-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-01T09-00-00.000000000.tif",
+      "valid_time": "2026-12-01T09:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-01T09-00-00.000000000.tif"
     },
     {
       "filename": "utci_2026-12-01T12-00-00.000000000.tif",
@@ -326,11 +179,25 @@
       "diag_url": "./data/diag_2026-12-01T12-00-00.000000000.tif"
     },
     {
+      "filename": "utci_2026-12-01T15-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-01T15-00-00.000000000.tif",
+      "valid_time": "2026-12-01T15:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-01T15-00-00.000000000.tif"
+    },
+    {
       "filename": "utci_2026-12-01T18-00-00.000000000.tif",
       "url": "./data/utci_2026-12-01T18-00-00.000000000.tif",
       "valid_time": "2026-12-01T18:00:00.000000000Z",
       "resolution_m": 250,
       "diag_url": "./data/diag_2026-12-01T18-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-01T21-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-01T21-00-00.000000000.tif",
+      "valid_time": "2026-12-01T21:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-01T21-00-00.000000000.tif"
     },
     {
       "filename": "utci_2026-12-02T00-00-00.000000000.tif",
@@ -340,11 +207,25 @@
       "diag_url": "./data/diag_2026-12-02T00-00-00.000000000.tif"
     },
     {
+      "filename": "utci_2026-12-02T03-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-02T03-00-00.000000000.tif",
+      "valid_time": "2026-12-02T03:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-02T03-00-00.000000000.tif"
+    },
+    {
       "filename": "utci_2026-12-02T06-00-00.000000000.tif",
       "url": "./data/utci_2026-12-02T06-00-00.000000000.tif",
       "valid_time": "2026-12-02T06:00:00.000000000Z",
       "resolution_m": 250,
       "diag_url": "./data/diag_2026-12-02T06-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-02T09-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-02T09-00-00.000000000.tif",
+      "valid_time": "2026-12-02T09:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-02T09-00-00.000000000.tif"
     },
     {
       "filename": "utci_2026-12-02T12-00-00.000000000.tif",
@@ -354,11 +235,25 @@
       "diag_url": "./data/diag_2026-12-02T12-00-00.000000000.tif"
     },
     {
+      "filename": "utci_2026-12-02T15-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-02T15-00-00.000000000.tif",
+      "valid_time": "2026-12-02T15:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-02T15-00-00.000000000.tif"
+    },
+    {
       "filename": "utci_2026-12-02T18-00-00.000000000.tif",
       "url": "./data/utci_2026-12-02T18-00-00.000000000.tif",
       "valid_time": "2026-12-02T18:00:00.000000000Z",
       "resolution_m": 250,
       "diag_url": "./data/diag_2026-12-02T18-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-02T21-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-02T21-00-00.000000000.tif",
+      "valid_time": "2026-12-02T21:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-02T21-00-00.000000000.tif"
     },
     {
       "filename": "utci_2026-12-03T00-00-00.000000000.tif",
@@ -368,11 +263,25 @@
       "diag_url": "./data/diag_2026-12-03T00-00-00.000000000.tif"
     },
     {
+      "filename": "utci_2026-12-03T03-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-03T03-00-00.000000000.tif",
+      "valid_time": "2026-12-03T03:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-03T03-00-00.000000000.tif"
+    },
+    {
       "filename": "utci_2026-12-03T06-00-00.000000000.tif",
       "url": "./data/utci_2026-12-03T06-00-00.000000000.tif",
       "valid_time": "2026-12-03T06:00:00.000000000Z",
       "resolution_m": 250,
       "diag_url": "./data/diag_2026-12-03T06-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-03T09-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-03T09-00-00.000000000.tif",
+      "valid_time": "2026-12-03T09:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-03T09-00-00.000000000.tif"
     },
     {
       "filename": "utci_2026-12-03T12-00-00.000000000.tif",
@@ -382,11 +291,25 @@
       "diag_url": "./data/diag_2026-12-03T12-00-00.000000000.tif"
     },
     {
+      "filename": "utci_2026-12-03T15-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-03T15-00-00.000000000.tif",
+      "valid_time": "2026-12-03T15:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-03T15-00-00.000000000.tif"
+    },
+    {
       "filename": "utci_2026-12-03T18-00-00.000000000.tif",
       "url": "./data/utci_2026-12-03T18-00-00.000000000.tif",
       "valid_time": "2026-12-03T18:00:00.000000000Z",
       "resolution_m": 250,
       "diag_url": "./data/diag_2026-12-03T18-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-03T21-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-03T21-00-00.000000000.tif",
+      "valid_time": "2026-12-03T21:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-03T21-00-00.000000000.tif"
     },
     {
       "filename": "utci_2026-12-04T00-00-00.000000000.tif",
@@ -408,6 +331,104 @@
       "valid_time": "2026-12-04T12:00:00.000000000Z",
       "resolution_m": 250,
       "diag_url": "./data/diag_2026-12-04T12-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-04T18-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-04T18-00-00.000000000.tif",
+      "valid_time": "2026-12-04T18:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-04T18-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-05T00-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-05T00-00-00.000000000.tif",
+      "valid_time": "2026-12-05T00:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-05T00-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-05T06-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-05T06-00-00.000000000.tif",
+      "valid_time": "2026-12-05T06:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-05T06-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-05T12-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-05T12-00-00.000000000.tif",
+      "valid_time": "2026-12-05T12:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-05T12-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-05T18-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-05T18-00-00.000000000.tif",
+      "valid_time": "2026-12-05T18:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-05T18-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-06T00-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-06T00-00-00.000000000.tif",
+      "valid_time": "2026-12-06T00:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-06T00-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-06T06-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-06T06-00-00.000000000.tif",
+      "valid_time": "2026-12-06T06:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-06T06-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-06T12-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-06T12-00-00.000000000.tif",
+      "valid_time": "2026-12-06T12:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-06T12-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-06T18-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-06T18-00-00.000000000.tif",
+      "valid_time": "2026-12-06T18:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-06T18-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-07T00-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-07T00-00-00.000000000.tif",
+      "valid_time": "2026-12-07T00:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-07T00-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-07T06-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-07T06-00-00.000000000.tif",
+      "valid_time": "2026-12-07T06:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-07T06-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-07T12-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-07T12-00-00.000000000.tif",
+      "valid_time": "2026-12-07T12:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-07T12-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-07T18-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-07T18-00-00.000000000.tif",
+      "valid_time": "2026-12-07T18:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-07T18-00-00.000000000.tif"
+    },
+    {
+      "filename": "utci_2026-12-08T00-00-00.000000000.tif",
+      "url": "./data/utci_2026-12-08T00-00-00.000000000.tif",
+      "valid_time": "2026-12-08T00:00:00.000000000Z",
+      "resolution_m": 250,
+      "diag_url": "./data/diag_2026-12-08T00-00-00.000000000.tif"
     }
   ],
   "diag_bands": [
